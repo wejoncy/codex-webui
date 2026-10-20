@@ -63,8 +63,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/")
     async def index():
-        return HTMLResponse(assets.html, headers={"Cache-Control": "no-store"})
+        return HTMLResponse(
+            assets.index_html, headers={"Cache-Control": "no-store"},
+        )
 
-    app.mount(assets.prefix, StaticFiles(directory=STATIC), name="assets")
+    app.mount(assets.prefix, assets, name="assets")
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

@@ -53,17 +53,23 @@ function updateStatus(status) {
   }
 }
 
-async function connect() {
+async function connect(eventStream) {
   if (state.connecting) return;
   state.connecting = true;
   updateStatus(state.status);
   try {
-    const status = await api('connect', {});
+    const [status] = await Promise.all([api('connect', {}), eventStream]);
     state.connecting = false;
     updateStatus(status);
     notice();
-    await Promise.allSettled([loadThreads(), loadModels(), loadAccount()]);
-    if (state.active) await openThread(state.active, true);
+    await Promise.allSettled([
+      loadThreads(), loadModels(), loadAccount(),
+      state.active && openThread(state.active, true),
+    ]);
+    if (state.view === 'chat' && state.active) {
+      const thread = state.threads.find(t => t.id === state.active);
+      $('page-detail').textContent = threadTitle(thread || {});
+    }
   } catch (error) {
     state.connecting = false;
     updateStatus({...state.status, connected: false});
@@ -277,7 +283,7 @@ $('new-chat').onclick = newChat;
 $('notice-close').onclick = () => notice();
 $('toast-close').onclick = clearToast;
 $('connect-button').onclick = () => state.connected ? $('settings-dialog').showModal() : connect();
-$('reconnect').onclick = connect;
+$('reconnect').onclick = () => connect();
 $('settings-nav').onclick = () => { $('settings-dialog').showModal(); setSidebar(false); };
 $('send-button').onclick = send;
 $('stop-button').onclick = async () => { const s = session(); if (!s.turnId || s.readOnly) return; try { await rpc('turn/interrupt',{threadId:state.active,turnId:s.turnId}); } catch (e) { report(e); } };
@@ -318,11 +324,16 @@ async function bootstrap() {
   if (new URLSearchParams(location.search).has('demo')) showExample('math');
   try {
     const health = await api('health'); $('logout-button').hidden = !health.authRequired;
-    updateStatus(await api('status'));
     client.openSocket(socketHandlers);
-    // Establish the event stream before issuing any thread or turn calls.
-    await new Promise(resolve => { if (client.socket.readyState === WebSocket.OPEN) resolve(); else { client.socket.addEventListener('open',resolve,{once:true}); setTimeout(resolve,2000); } });
-    await connect();
+    const eventStream = new Promise(resolve => {
+      if (client.socket.readyState === WebSocket.OPEN) resolve();
+      else {
+        client.socket.addEventListener('open', resolve, {once:true});
+        setTimeout(resolve, 2000);
+      }
+    });
+    // Connect Codex in parallel; wait for events before opening a thread.
+    await connect(eventStream);
   } catch (error) { if (!$('login-dialog').open) notice(error.message,true); }
 }
 bootstrap();
