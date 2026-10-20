@@ -16,28 +16,24 @@
 }
 
 .message { margin-bottom: 1.5rem; }
+.message-body { margin-inline-start: 0; }
 .message-body, .markdown-body, .user-message .message-body {
-  font-size: 1rem;
+  font-size: .9375rem;
   line-height: 1.75;
   letter-spacing: normal;
   text-align: start;
 }
 
-/* Keep prose readable on wide screens; code and tables can use the full column. */
-.markdown-body :is(p, ul, ol, blockquote, h1, h2, h3, h4) {
-  max-inline-size: 40em;
-  max-inline-size: 40ic;
-}
 .markdown-body p { margin-bottom: .8em; }
 .markdown-body :is(h1, h2, h3, h4) {
   line-height: 1.45;
   letter-spacing: normal;
   margin: 1.4em 0 .6em;
 }
-.markdown-body h1 { font-size: 1.65rem; }
-.markdown-body h2 { font-size: 1.35rem; }
-.markdown-body h3 { font-size: 1.125rem; }
-.markdown-body h4 { font-size: 1rem; }
+.markdown-body h1 { font-size: 1.5em; }
+.markdown-body h2 { font-size: 1.3em; }
+.markdown-body h3 { font-size: 1.15em; }
+.markdown-body h4 { font-size: 1em; }
 .markdown-body :is(ul, ol) { margin-block: .7em .9em; }
 .markdown-body pre {
   max-inline-size: 100%;
