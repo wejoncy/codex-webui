@@ -1,15 +1,21 @@
 name: Build wheel
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
 
 permissions:
   contents: read
 
 jobs:
   wheel:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
