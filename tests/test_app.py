@@ -262,3 +262,15 @@ def test_writer_conflict_survives_tabs_and_f5_recovers_when_released(tmp_path):
             assert access.json() == {"threadId": "fixture-thread", "readOnly": False}
             assert ws.receive_json() == {"method": "webui/threadAccess", "params": access.json()}
         assert client.post("/api/rpc", json={"method": "turn/start", "params": {"threadId": "fixture-thread", "input": [{"type": "text", "text": "released"}]}}).status_code == 200
+
+
+def test_permanent_delete_uses_rpc_and_broadcasts_to_all_tabs(client):
+    client.post("/api/connect")
+    thread_id = client.post("/api/rpc", json={"method": "thread/start"}).json()["result"]["thread"]["id"]
+    with client.websocket_connect("/ws") as first, client.websocket_connect("/ws") as second:
+        assert first.receive_json()["method"] == second.receive_json()["method"] == "webui/status"
+        response = client.post("/api/rpc", json={"method": "thread/delete", "params": {"threadId": thread_id}})
+        assert response.status_code == 200 and response.json() == {"result": {}}
+        deleted = {"method": "thread/deleted", "params": {"threadId": thread_id}}
+        assert first.receive_json() == second.receive_json() == deleted
+    assert not client.post("/api/rpc", json={"method": "thread/list"}).json()["result"]["data"]

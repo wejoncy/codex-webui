@@ -2,7 +2,7 @@ export function createTurnController({state, session, rpc, connect, history, com
   const {hydrateSession} = history;
   function upsert(threadId, item, turnId, streaming = false) {
     const s = session(threadId);
-    if (s.removedTurns.has(turnId)) return;
+    if (s.deleted || s.removedTurns.has(turnId)) return;
     const record = {...s.items.get(item.id), ...item, turnId, _revision:++state.revision};
     if (item.clientId) s.items.delete(`local-${item.clientId}`);
     s.items.set(item.id, record);
@@ -16,6 +16,7 @@ export function createTurnController({state, session, rpc, connect, history, com
     operation.applied = true;
     operation.edit.reverted = true;
     const s = session(id), retained = new Map();
+    if (s.deleted) return;
     let remove = false;
     for (const [key, item] of s.items) {
       if (item.turnId === operation.edit.turnId) remove = true;
@@ -47,12 +48,15 @@ export function createTurnController({state, session, rpc, connect, history, com
     const isCurrent = () => epoch === state.epoch && id === state.active && state.view === 'chat';
     try {
       if (!state.connected) { await connect(); if (!state.connected) return; }
-      if (!id) {
+      const newThread = !id;
+      if (newThread) {
         const result = await rpc('thread/start', {...(model ? {model} : {})}, executionSettings);
         id = result.thread.id; session(id).resumed = true;
-        if (epoch === state.epoch) view.activateThread(id);
       }
       const s = session(id);
+      if (s.deleted) throw new Error('此会话已删除');
+      view.rememberModel(id,{model,effort});
+      if (newThread && epoch === state.epoch) view.activateThread(id);
       if (!s.resumed) {
         await rpc('thread/resume', {threadId: id, excludeTurns: true}, executionSettings);
         s.resumed = true;
@@ -85,7 +89,7 @@ export function createTurnController({state, session, rpc, connect, history, com
         view.notice(); state.autoScroll = true; view.scrollBottom(true);
       }
       const result = await rpc('turn/start', {threadId:id,clientUserMessageId:clientId,input,...(model ? {model} : {}),...(effort ? {effort} : {})}, executionSettings);
-      if (!s.removedTurns.has(result.turn.id)) {
+      if (!s.deleted && !s.removedTurns.has(result.turn.id)) {
         s.turnId = result.turn.id; s.running = !s.finished.has(result.turn.id) && result.turn.status === 'inProgress';
       }
       if (id === state.active) view.updateRunning();

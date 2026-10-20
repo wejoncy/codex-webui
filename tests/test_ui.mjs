@@ -18,8 +18,13 @@ Object.defineProperty(window.HTMLSelectElement.prototype,'value',{
  set(value){for(const o of this.children){if(o.value===value)o.setAttribute('selected','');else o.removeAttribute('selected')}}
 });
 globalThis.Option=function(text,value){const o=document.createElement('option');o.textContent=text;o.value=value;return o};
-const storage=new Map();
-globalThis.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)};
+const storage=new Map([['codex-webui-model-defaults',JSON.stringify({model:'fixture-model',effort:'high'})]]);
+globalThis.localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
+window.HTMLElement.prototype.showPopover=function(){this.dataset.open='true';};
+window.HTMLElement.prototype.hidePopover=function(){delete this.dataset.open;};
+const confirmations=[];
+let confirmDelete=true;
+window.confirm=message=>{confirmations.push(message);return confirmDelete;};
 let mobile=false;
 globalThis.matchMedia=query=>({matches:query.includes('max-width')&&mobile});
 globalThis.location=new URL('http://localhost/');
@@ -67,6 +72,8 @@ history.set('reasoning-history',[{id:'reasoning-turn',status:'completed',items:[
 ]}]);
 let turnSequence=0,revertError=false,turnError=false,delayRevertEvent=false;
 let deferredRead=null,deferredResume=null,deferredTurns=null,deferredRevert=null,deferredTurn=null;
+let deleteError=false,deferredDelete=null,deferredList=null,skipDeleteEvents=false;
+const deleteChildren=new Map();
 const events=message=>{
  if(message.method==='webui/threadAccess')accessStates.set(message.params.threadId,message.params.readOnly);
  socket.onmessage({data:JSON.stringify(message)});
@@ -92,7 +99,10 @@ globalThis.fetch=async (url,init)=>{
    return await new Promise(resolve=>{pending.resolve=()=>resolve({status:200,ok:true,json:async()=>data})});
   }
  }
- else if(method==='thread/list')data={result:{data:threads,nextCursor:null}};
+ else if(method==='thread/list'){
+  data={result:{data:threads,nextCursor:null}};
+  if(deferredList){const pending=deferredList;deferredList=null;return await new Promise(resolve=>{pending.resolve=()=>resolve({status:200,ok:true,json:async()=>data})});}
+ }
  else if(method==='model/list')data={result:{data:[]}};
  else if(method==='account/read')data={result:{account:null}};
  else if(method==='thread/read'){
@@ -125,6 +135,14 @@ globalThis.fetch=async (url,init)=>{
   const notification={method:'thread/reverted',params:{threadId:p.threadId}};
   if(delayRevertEvent)pendingRevertEvents.push(notification);else events(notification);
   data={result:{thread:{id:p.threadId,turns:[]},turnsBackwardsCursor:null,itemsBackwardsCursor:null}};
+ } else if(method==='thread/delete'){
+  if(deferredDelete)await new Promise(resolve=>{deferredDelete.resolve=resolve});
+  if(deleteError)return {status:502,ok:false,json:async()=>({error:{message:'fixture deletion failed'}})};
+  for(const id of [p.threadId,...(deleteChildren.get(p.threadId)||[])]){
+   threads=threads.filter(thread=>thread.id!==id);history.delete(id);
+   if(!skipDeleteEvents)events({method:'thread/deleted',params:{threadId:id}});
+  }
+  data={result:{}};
  } else if(method==='turn/start'){
   turnCalls.push(p.threadId);
   if(deferredTurn)await new Promise(resolve=>{deferredTurn.resolve=resolve});
@@ -159,6 +177,10 @@ assert.ok(document.querySelector('.agent-message img'),'streamed image must rend
 assert.equal(document.getElementById('stop-button').hidden,true,'completion before RPC response must remain completed');
 assert.equal(document.getElementById('send-button').hidden,false);
 assert.deepEqual(resumeCalls,[],'new threads must not need a separate resume');
+assert.equal(requests.find(request=>request.method==='thread/start').params.model,'fixture-model');
+assert.equal(requests.find(request=>request.method==='turn/start').params.model,'fixture-model');
+assert.equal(requests.find(request=>request.method==='turn/start').params.effort,'high');
+assert.deepEqual(JSON.parse(storage.get('codex-webui-model:thread-1')),{model:'fixture-model',effort:'high'},'a new thread remembers the captured send settings');
 assert.ok(rpcRequests.filter(r=>['thread/start','turn/start'].includes(r.method)).every(r=>r.permissionMode==='ask'&&r.allowNetwork===false));
 async function openHistory(title){
  const button=[...document.querySelectorAll('.thread-open')].find(el=>el.textContent.includes(title));
@@ -167,6 +189,7 @@ async function openHistory(title){
 }
 accessStates.set('available-history',true);
 await openHistory('可继续的历史');
+assert.equal(document.getElementById('model-select').value,'','existing sessions do not inherit defaults for new sessions');
 assert.equal(document.getElementById('prompt').disabled,true,'first opening detects writer without sending');
 assert.deepEqual(resumeCalls,[],'access checks must not resume');
 document.getElementById('prompt').value='只读草稿';
@@ -406,8 +429,33 @@ assert.equal(document.querySelectorAll('.user-message').length,1,'background gen
 // Refreshing after a revert must keep already loaded older pages before the latest page.
 await openHistory('较长分页会话');
 assert.equal(document.querySelectorAll('.user-message').length,12);
-await document.getElementById('more-history').onclick();
+// Question navigation uses existing pagination and stops following queued streams.
+const scrollArea=document.getElementById('scroll-area'),messageList=document.getElementById('messages');
+const elementPrototype=window.HTMLElement.prototype,originalBounds=elementPrototype.getBoundingClientRect;
+Object.defineProperty(scrollArea,'scrollHeight',{configurable:true,get:()=>messageList.children.length*200});
+Object.defineProperty(scrollArea,'clientHeight',{configurable:true,value:400});
+elementPrototype.getBoundingClientRect=function(){
+ if(this===scrollArea)return {top:0};
+ if(this.parentElement===messageList)return {top:[...messageList.children].indexOf(this)*200+20-scrollArea.scrollTop};
+ return originalBounds.call(this);
+};
+scrollArea.scrollTop=4600;
+scrollArea.dispatchEvent(new window.Event('scroll'));
+events({method:'item/agentMessage/delta',params:{threadId:'paged-history',turnId:'paged-15',itemId:'agent-paged-15',delta:' continued'}});
+const previousQuestion=document.getElementById('previous-question');
+await previousQuestion.onclick();
+await wait(80);
+assert.equal(document.getElementById('item-user-paged-15').getBoundingClientRect().top,12,'a queued stream must not undo question navigation');
+for(let i=1;i<12;i++)await previousQuestion.onclick();
+assert.equal(document.getElementById('item-user-paged-4').getBoundingClientRect().top,12,'each click reaches the preceding question');
+await previousQuestion.onclick();
 assert.equal(document.querySelectorAll('.user-message').length,16);
+assert.equal(document.getElementById('item-user-paged-3').getBoundingClientRect().top,12,'navigation loads the preceding history page');
+document.getElementById('jump-bottom').onclick();
+await wait(20);
+assert.equal(scrollArea.scrollTop,scrollArea.scrollHeight,'latest-message navigation still works');
+elementPrototype.getBoundingClientRect=originalBounds;
+delete scrollArea.scrollHeight;delete scrollArea.clientHeight;
 editButton('paged-14').onclick();
 setEdit('分页编辑');
 await saveEdit();
@@ -499,5 +547,65 @@ assert.match(imagePreview.querySelector('img').src,/path=images%2Ffinal.png$/,'r
 document.getElementById('new-chat').onclick();
 assert.equal(location.search,'?keep=value');
 assert.equal(document.getElementById('prompt').disabled,false);
-console.log('UI state tests passed: streaming, history, permissions, same-session edit/retry, stale events, sidebar, URL navigation, scoped read-only state and access recovery');
+
+// One action menu handles rename/archive/delete without hidden text commands.
+function threadRow(title){return [...document.querySelectorAll('.thread-row')].find(row=>row.querySelector('.thread-open').textContent.includes(title));}
+function openMenu(title){threadRow(title).querySelector('.thread-action').onclick();return document.getElementById('thread-menu');}
+const deleteAction=()=>document.querySelector('#thread-menu [data-action="delete"]');
+await openHistory('可继续的历史');
+assert.equal(openMenu('可继续的历史').dataset.open,'true');
+assert.deepEqual([...document.querySelectorAll('#thread-menu button')].map(button=>button.textContent),['重命名','归档','永久删除…']);
+const deleteCount=()=>requests.filter(request=>request.method==='thread/delete').length;
+let beforeDelete=deleteCount();
+confirmDelete=false;await deleteAction().onclick();
+assert.equal(deleteCount(),beforeDelete,'cancel sends no deletion request');
+assert.ok(threadRow('可继续的历史'));
+confirmDelete=true;deleteError=true;
+openMenu('可继续的历史');await deleteAction().onclick();deleteError=false;
+assert.ok(threadRow('可继续的历史'),'failed deletion keeps the sidebar entry');
+assert.equal(new URL(location).searchParams.get('session'),'available-history','failed deletion keeps the active URL');
+assert.match(confirmations.at(-1),/子会话/);
+
+// A delayed deletion of another session preserves the current draft and selection.
+deferredDelete={};openMenu('可继续的历史');
+const deleting=deleteAction().onclick();await wait(0);
+beforeDelete=deleteCount();await deleteAction().onclick();
+assert.equal(deleteCount(),beforeDelete,'double click never sends another delete');
+await openHistory('编辑原会话');
+document.getElementById('prompt').value='另一个会话的草稿';
+deferredDelete.resolve();await deleting;deferredDelete=null;
+assert.equal(document.getElementById('prompt').value,'另一个会话的草稿');
+assert.equal(new URL(location).searchParams.get('session'),'edit-history');
+assert.equal(threadRow('可继续的历史'),undefined);
+
+// Response cleanup and deletion events share an idempotent path, including descendants.
+storage.set('codex-webui-model:edit-history',JSON.stringify({model:'fixture-model',effort:'high'}));
+storage.set('codex-webui-model:reasoning-history',JSON.stringify({model:'fixture-model',effort:'low'}));
+deleteChildren.set('edit-history',['reasoning-history']);
+openMenu('编辑原会话');await deleteAction().onclick();
+assert.equal(location.search,'?keep=value');
+assert.equal(document.querySelectorAll('#messages .message').length,0);
+assert.equal(storage.has('codex-webui-model:edit-history'),false);
+assert.equal(storage.has('codex-webui-model:reasoning-history'),false);
+assert.equal(threadRow('编辑原会话'),undefined);
+assert.equal(threadRow('思考摘要记录'),undefined);
+events({method:'thread/deleted',params:{threadId:'edit-history'}});
+events({method:'thread/started',params:{thread:{id:'edit-history',preview:'不应复活'}}});
+events({method:'item/completed',params:{threadId:'edit-history',turnId:'late',item:{id:'late-item',type:'userMessage',content:[]}}});
+assert.equal(threadRow('不应复活'),undefined,'late lifecycle events cannot resurrect deleted sessions');
+assert.equal(document.getElementById('item-late-item'),null);
+
+// Deleting while an old history page/list is in flight invalidates both responses.
+const pendingHistory={threadId:'paged-history'};deferredTurns=pendingHistory;
+// External changes invalidate the cached snapshot and trigger a refresh.
+events({method:'thread/reverted',params:{threadId:'paged-history'}});
+const openingDeleted=openHistory('较长分页会话');await wait(0);
+const oldList={};deferredList=oldList;
+const listingDeleted=document.getElementById('more-threads').onclick();await wait(0);
+events({method:'thread/deleted',params:{threadId:'paged-history'}});
+pendingHistory.resolve();oldList.resolve();await openingDeleted;await listingDeleted;
+assert.equal(threadRow('较长分页会话'),undefined,'stale list cannot restore a deleted row');
+assert.equal(document.querySelectorAll('#messages .message').length,0,'stale history cannot restore deleted messages');
+
+console.log('UI state tests passed: streaming, same-session edit, navigation, menu, permanent deletion, failures and stale-event cleanup');
 process.exit(0);

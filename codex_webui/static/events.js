@@ -1,6 +1,8 @@
 export function createEventHandler({state, session, turns, editor, setThreadAccess, view}) {
   function onEvent(message) {
     const p = message.params || {}, method = message.method;
+    if (method === 'thread/deleted') { view.removeThread(p.threadId); return; }
+    if (state.sessions.get(p.threadId || p.thread?.id)?.deleted) return;
     if (method === 'webui/threadAccess') { setThreadAccess(p.threadId, p.readOnly); return; }
     if (message.id !== undefined) { state.approvals.set(JSON.stringify(message.id), message); view.renderApprovals(); view.updateRunning(); return; }
     if (method === 'webui/status') { view.updateStatus(p); return; }
@@ -14,7 +16,9 @@ export function createEventHandler({state, session, turns, editor, setThreadAcce
       view.renderThreads(); return;
     }
     if (method === 'thread/name/updated') {
-      const thread = state.threads.find(t => t.id === p.threadId); if (thread) thread.name = p.threadName || p.name; view.renderThreads(); return;
+      const thread = state.threads.find(t => t.id === p.threadId);
+      if (thread) { state.listing++; thread.name = p.threadName ?? p.name; }
+      view.renderThreads(); return;
     }
     if (!p.threadId) return;
     const s = session(p.threadId);

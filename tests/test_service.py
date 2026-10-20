@@ -202,3 +202,37 @@ def test_remote_access_never_probes_local_disk(tmp_path, monkeypatch):
         assert bridge.calls == []
 
     asyncio.run(check())
+
+
+def test_delete_rechecks_unopened_writers_and_forwards_only_after_release(tmp_path, monkeypatch):
+    locked = True
+    monkeypatch.setattr("codex_webui.service.writer_is_locked", lambda *_: locked)
+
+    async def check():
+        nonlocal locked
+        bridge = RecordingBridge()
+        bridge.connection_info = {"transport": "stdio", "server": {"codexHome": str(tmp_path)}}
+        service = CodexService(Settings(workspace=tmp_path), bridge)
+        with pytest.raises(RpcError) as conflict:
+            await service.request("thread/delete", {"threadId": "unopened"})
+        assert conflict.value.data == {"threadId": "unopened", "readOnly": True}
+        assert all(method != "thread/delete" for method, _ in bridge.calls)
+        assert all(method != "thread/resume" for method, _ in bridge.calls)
+        locked = False
+        params = {"threadId": "unopened"}
+        assert await service.request("thread/delete", params) == params
+        assert bridge.calls[-1] == ("thread/delete", params)
+
+    asyncio.run(check())
+
+
+@pytest.mark.parametrize("params", [{}, {"threadId": None}, {"threadId": 7}, {"threadId": ""}])
+def test_delete_requires_thread_id_before_connecting(tmp_path, params):
+    async def check():
+        bridge = RecordingBridge()
+        service = CodexService(Settings(workspace=tmp_path), bridge)
+        with pytest.raises(RpcError):
+            await service.request("thread/delete", params)
+        assert bridge.connects == 0 and bridge.calls == []
+
+    asyncio.run(check())

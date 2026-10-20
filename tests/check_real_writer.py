@@ -18,7 +18,7 @@ from codex_webui.service import CodexService
 def seed_history(home: Path, turns: int = 1) -> tuple[str, Path]:
     ident = str(uuid.uuid4())
     path = home / "sessions/2026/10/19" / f"rollout-2026-10-19T11-00-00-{ident}.jsonl"
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     records = [
         ("session_meta", {"id": ident, "timestamp": "2026-10-19T11:00:00Z", "cwd": str(home),
                           "originator": "codex_cli_rs", "cli_version": "0.163.0",
@@ -68,6 +68,7 @@ async def main():
             home = Path(directory)
             os.environ["CODEX_HOME"] = directory
             ident, path = seed_history(home, turns=3)
+            archived_id, archived_path = seed_history(home)
             settings = Settings(workspace=home, rpc_timeout=10)
             owner, viewer = CodexBridge(settings), CodexBridge(settings)
             service = CodexService(settings, viewer)
@@ -90,6 +91,13 @@ async def main():
                 assert any(item.get("text") == "fixture answer $E=mc^2$"
                            for turn in history["data"] for item in turn["items"])
                 assert owner.ready and viewer.ready
+                try:
+                    await service.request("thread/delete", {"threadId": ident})
+                except RpcError as exc:
+                    assert exc.data == {"threadId": ident, "readOnly": True}
+                else:
+                    raise AssertionError("deleting another client's writer must be blocked")
+                assert path.exists(), "writer conflict must leave history intact"
                 await owner.close()
                 assert not (await service.refresh_access(ident))["readOnly"]
                 await service.request("thread/resume", {"threadId": ident, "excludeTurns": True})
@@ -120,10 +128,33 @@ async def main():
                 })
                 assert not remaining["data"], "truncation must survive app-server restart"
                 listed = await reopened.request("thread/list", {"limit": 10})
-                assert [thread["id"] for thread in listed["data"]] == [ident], "editing must never fork"
+                assert {thread["id"] for thread in listed["data"]} == {ident, archived_id}, "editing must never fork"
+                deleting = CodexService(settings, reopened)
+                queue = deleting.subscribe()
+                assert await deleting.request("thread/delete", {"threadId": ident}) == {}
+                assert not path.exists(), "permanent deletion must remove the actual rollout"
+                async with asyncio.timeout(5):
+                    while (event := await queue.get())["method"] != "thread/deleted":
+                        pass
+                assert event["params"] == {"threadId": ident}
+                await deleting.request("thread/archive", {"threadId": archived_id})
+                assert not archived_path.exists()
+                archived_files = list((home / "archived_sessions").rglob(f"*{archived_id}*"))
+                assert archived_files, "archive must retain history before permanent deletion"
+                assert await deleting.request("thread/delete", {"threadId": archived_id}) == {}
+                assert all(not file.exists() for file in archived_files)
+                assert not (await deleting.request("thread/list", {"limit": 10}))["data"]
+                assert not (await deleting.request("thread/list", {"limit": 10, "archived": True}))["data"]
             finally:
                 await reopened.close()
-        print("Real Codex check passed: writer conflict, read-only history, release, same-session truncation and resend readiness")
+            after_delete = CodexBridge(settings)
+            try:
+                await after_delete.connect()
+                assert not (await after_delete.request("thread/list", {"limit": 10}))["data"]
+                assert not (await after_delete.request("thread/list", {"limit": 10, "archived": True}))["data"]
+            finally:
+                await after_delete.close()
+        print("Real Codex check passed: writer conflict, same-session truncation and permanent deletion of active/archived history across restart")
     finally:
         if previous_home is None:
             os.environ.pop("CODEX_HOME", None)

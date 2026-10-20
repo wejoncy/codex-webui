@@ -1,8 +1,41 @@
 import {$,icon} from './dom.js';
 export function threadTitle(thread) { return thread.name || thread.preview?.replace(/\s+/g, ' ').slice(0,65) || '新的对话'; }
-export function createSidebarView({state,rpc,onOpen,onNewChat,report}) {
+export function createSidebarView({state,rpc,onOpen,onNewChat,onDelete,canDelete,report}) {
   const settings = $('sidebar-settings');
+  const pending = new Set();
+  let selected = null, menuOpen = false;
+  const menu = document.createElement('div');
+  menu.id = 'thread-menu'; menu.className = 'thread-menu'; menu.setAttribute('popover', 'auto');
+  menu.setAttribute('role', 'group'); menu.setAttribute('aria-label', '会话操作');
+  function closeMenu() { if (menuOpen) menu.hidePopover(); menuOpen = false; selected = null; }
+  for (const [action, label] of [['rename','重命名'],['archive','归档'],['delete','永久删除…']]) {
+    const button = document.createElement('button'); button.type = 'button';
+    button.dataset.action = action; button.textContent = label;
+    button.onclick = async () => {
+      const thread = selected;
+      if (!thread || pending.has(thread.id) || state.sessions.get(thread.id)?.readOnly) return;
+      closeMenu();
+      if (action === 'delete' && (!canDelete(thread.id) || state.sessions.get(thread.id)?.running)) return;
+      const name = action === 'rename' ? window.prompt('输入新名称', threadTitle(thread))?.trim() : null;
+      if (action === 'rename' && !name) return;
+      if (action === 'delete' && !window.confirm(`永久删除“${threadTitle(thread)}”及其创建的子会话？此操作无法撤销。`)) return;
+      pending.add(thread.id); renderThreads();
+      try {
+        if (action === 'delete') await onDelete(thread.id);
+        else {
+          await rpc(action === 'rename' ? 'thread/name/set' : 'thread/archive', {threadId:thread.id, ...(name ? {name} : {})});
+          if (action === 'archive' && state.active === thread.id) onNewChat();
+          await loadThreads();
+        }
+      } catch (error) { report(error); }
+      finally { pending.delete(thread.id); renderThreads(); }
+    };
+    menu.append(button);
+  }
+  menu.addEventListener('toggle', event => { menuOpen = event.newState === 'open'; });
+  $('sidebar-content').append(menu);
   function setSidebar(open) {
+    closeMenu();
     const sidebar = $('sidebar');
     const content = $('sidebar-content');
     const rail = $('sidebar-expand');
@@ -25,11 +58,20 @@ export function createSidebarView({state,rpc,onOpen,onNewChat,report}) {
     const term = $('search').value.trim();
     const result = await rpc('thread/list', {limit: 40, sortKey: 'updated_at', ...(append && state.cursor ? {cursor: state.cursor} : {}), ...(term ? {searchTerm: term} : {})});
     if (version !== state.listing) return;
-    state.threads = append ? [...state.threads, ...result.data.filter(t => !state.threads.some(old => old.id === t.id))] : result.data;
+    // Paginated history can return several rollout segments for one thread.
+    // Own list identity here, across both a single page and successive pages.
+    const threads = new Map((append ? state.threads : []).map(thread => [thread.id, thread]));
+    for (const thread of result.data) {
+      if (state.sessions.get(thread.id)?.deleted) continue;
+      const previous = threads.get(thread.id);
+      if (!previous || (thread.updatedAt ?? 0) > (previous.updatedAt ?? 0)) threads.set(thread.id, thread);
+    }
+    state.threads = [...threads.values()];
     state.cursor = result.nextCursor;
     renderThreads();
   }
   function renderThreads() {
+    closeMenu();
     const fragment = document.createDocumentFragment();
     for (const thread of state.threads) {
       const row = document.createElement('div'); row.className = `thread-row${thread.id === state.active && state.view === 'chat' ? ' active' : ''}`;
@@ -38,19 +80,18 @@ export function createSidebarView({state,rpc,onOpen,onNewChat,report}) {
       open.onclick = () => onOpen(thread.id).catch(report);
       row.append(open);
       if (state.sessions.get(thread.id)?.running) { const dot = document.createElement('span'); dot.className = 'thread-running'; row.append(dot); }
-      const rename = document.createElement('button'); rename.className = 'thread-action'; rename.textContent = '⋯'; rename.title = '重命名或归档'; rename.setAttribute('aria-label', `管理对话：${label.textContent}`);
-      rename.disabled = !!state.sessions.get(thread.id)?.readOnly;
-      rename.onclick = async () => {
-        if (state.sessions.get(thread.id)?.readOnly) return;
-        const name = window.prompt('输入新名称；输入 /archive 归档此对话', threadTitle(thread));
-        if (!name?.trim()) return;
-        try {
-          if (name.trim() === '/archive') { await rpc('thread/archive', {threadId: thread.id}); if (state.active === thread.id) onNewChat(); }
-          else await rpc('thread/name/set', {threadId: thread.id, name: name.trim()});
-          await loadThreads();
-        } catch (e) { report(e); }
+      const actions = document.createElement('button'); actions.className = 'thread-action'; actions.textContent = '⋯'; actions.title = '会话操作'; actions.setAttribute('aria-label', `管理对话：${label.textContent}`);
+      actions.disabled = pending.has(thread.id) || !!state.sessions.get(thread.id)?.readOnly;
+      actions.setAttribute('aria-controls', 'thread-menu'); actions.setAttribute('aria-haspopup', 'true');
+      actions.onclick = () => {
+        closeMenu(); selected = thread;
+        menu.querySelector('[data-action="delete"]').disabled = !canDelete(thread.id) || !!state.sessions.get(thread.id)?.running;
+        menu.showPopover(); menuOpen = true;
+        const anchor = actions.getBoundingClientRect(), bounds = menu.getBoundingClientRect();
+        menu.style.left = `${Math.max(8, Math.min(anchor.right-bounds.width, window.innerWidth-bounds.width-8))}px`;
+        menu.style.top = `${Math.max(8, Math.min(anchor.bottom+4, window.innerHeight-bounds.height-8))}px`;
       };
-      row.append(rename); fragment.append(row);
+      row.append(actions); fragment.append(row);
     }
     if (!state.threads.length) { const empty = document.createElement('p'); empty.className = 'sidebar-empty'; empty.textContent = state.connected ? '还没有对话。从一个想法开始吧。' : '连接后，你的对话会出现在这里。'; fragment.append(empty); }
     $('thread-list').replaceChildren(fragment);
