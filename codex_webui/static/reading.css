@@ -18,7 +18,7 @@
 .message { margin-bottom: 1.5rem; }
 .message-body { margin-inline-start: 0; }
 .message-body, .markdown-body, .user-message .message-body {
-  font-size: .9375rem;
+  font-size: .8125rem;
   line-height: 1.75;
   letter-spacing: normal;
   text-align: start;
@@ -37,21 +37,48 @@
 .markdown-body :is(ul, ol) { margin-block: .7em .9em; }
 .markdown-body pre {
   max-inline-size: 100%;
-  font-size: .875rem;
+  font-size: .75rem;
   line-height: 1.65;
   overscroll-behavior-inline: contain;
 }
 .markdown-body table { font-size: .875rem; }
-.markdown-body code { font-size: .9em; }
+.markdown-body code { font-size: .75rem; }
 .markdown-body pre > code { font: inherit; }
+.markdown-body .katex { font-size: calc(.9375rem * 1.13); }
+.markdown-body .math-fallback:not(.math-error) { font-size: .9375rem; }
 .table-wrap, .math-display, .markdown-body .katex-display, .math-fallback {
   max-inline-size: 100%;
   overscroll-behavior-inline: contain;
 }
 .tool-output { font-size: .8125rem; line-height: 1.65; }
+.message.tool-message:not(.image-message) {
+  --message-placeholder-height: 1.875rem;
+  margin: .25rem 0;
+}
+.command-group { margin: .25rem 0; }
+.command-group > div { padding-inline-start: .75rem; }
+.tool-message:not(.image-message) details:not([open]) {
+  border-color: transparent;
+  background: transparent;
+}
+.tool-message:not(.image-message) summary {
+  padding: .25rem .5rem;
+  min-height: 1.75rem;
+  border-radius: .375rem;
+}
+.tool-message:not(.image-message) summary:hover { background: var(--hover); }
+.tool-message:not(.image-message) summary::after { content: '›'; }
+.tool-message:not(.image-message) details[open] summary::after,
+.command-group[open] > summary::after {
+  transform: rotate(90deg);
+}
+.tool-message[data-status="failed"] > summary,
+.tool-message[data-status="failed"] > details > summary {
+  color: var(--danger);
+}
 .composer-area { width: min(52rem, calc(100% - 2 * var(--reading-gutter))); }
 .composer textarea {
-  font-size: 1rem;
+  font-size: .8125rem;
   line-height: 1.6;
   max-height: min(11.25rem, 25dvh);
 }

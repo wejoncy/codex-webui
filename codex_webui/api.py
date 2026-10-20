@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field, StrictBool, StrictInt, StrictStr
 from starlette.requests import HTTPConnection
 
 from .files import ImageNotFound, UnsupportedImage
+from .history import (
+    HistoryPage, HistoryQuery, ToolDetailQuery, ToolDetailResponse,
+    read_history, read_tool,
+)
 from .permissions import PermissionMode
 from .security import AccessPolicy
 from .service import CodexService, UnsupportedMethod
@@ -88,7 +92,7 @@ def create_router(access: AccessPolicy) -> APIRouter:
 
     @router.post("/api/connect")
     async def connect(service: ServiceDependency):
-        return await service.connect()
+        return {**(await service.connect()), "authRequired": access.required}
 
     @router.post("/api/rpc")
     async def rpc(body: RpcBody, service: ServiceDependency):
@@ -103,6 +107,14 @@ def create_router(access: AccessPolicy) -> APIRouter:
     async def refresh_access(body: ThreadAccessBody, service: ServiceDependency):
         return await service.refresh_access(body.threadId, permission_mode=body.permissionMode,
                                             allow_network=body.allowNetwork)
+
+    @router.post("/api/history", response_model=HistoryPage)
+    async def history(body: HistoryQuery, service: ServiceDependency):
+        return await read_history(service, body)
+
+    @router.post("/api/history/item", response_model=ToolDetailResponse)
+    async def history_item(body: ToolDetailQuery, service: ServiceDependency):
+        return await read_tool(service, body)
 
     @router.post("/api/respond")
     async def respond(body: ReplyBody, service: ServiceDependency):

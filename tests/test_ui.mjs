@@ -31,6 +31,13 @@ globalThis.location=new URL('http://localhost/');
 const visitedURLs=[];
 globalThis.history={pushState:(_state,_title,url)=>{visitedURLs.push(url);globalThis.location=new URL(url)}};
 globalThis.requestAnimationFrame=fn=>setTimeout(fn,0);
+let sizeObserver;
+globalThis.ResizeObserver=class {
+ constructor(callback){this.callback=callback;sizeObserver=this;}
+ observe(){}
+ unobserve(){}
+ disconnect(){}
+};
 globalThis.DOMPurify={sanitize:value=>value}; // This checks UI state, not browser XSS behavior.
 class Worker {
  constructor(){
@@ -446,6 +453,11 @@ const previousQuestion=document.getElementById('previous-question');
 await previousQuestion.onclick();
 await wait(80);
 assert.equal(document.getElementById('item-user-paged-15').getBoundingClientRect().top,12,'a queued stream must not undo question navigation');
+const questionPosition=scrollArea.scrollTop;
+sizeObserver.callback();sizeObserver.callback();
+await wait(20);
+assert.equal(scrollArea.scrollTop,questionPosition,
+ 'late layout respects navigation even within the bottom threshold');
 for(let i=1;i<12;i++)await previousQuestion.onclick();
 assert.equal(document.getElementById('item-user-paged-4').getBoundingClientRect().top,12,'each click reaches the preceding question');
 await previousQuestion.onclick();
@@ -454,6 +466,11 @@ assert.equal(document.getElementById('item-user-paged-3').getBoundingClientRect(
 document.getElementById('jump-bottom').onclick();
 await wait(20);
 assert.equal(scrollArea.scrollTop,scrollArea.scrollHeight,'latest-message navigation still works');
+messageList.append(document.createElement('article'));
+sizeObserver.callback();await wait(20);
+assert.equal(scrollArea.scrollTop,scrollArea.scrollHeight,
+ 'jumping to latest restores following for subsequent layout changes');
+messageList.lastElementChild.remove();
 elementPrototype.getBoundingClientRect=originalBounds;
 delete scrollArea.scrollHeight;delete scrollArea.clientHeight;
 editButton('paged-14').onclick();

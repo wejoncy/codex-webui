@@ -1,18 +1,23 @@
 import {$} from './dom.js';
 import {renderAttachments as renderAttachmentList} from './attachment-view.js';
-export function createComposerView({state, session, showChat, toast}) {
-  function setDraft(text, attachments) {
-    $('prompt').value = text;
-    $('prompt').style.height = 'auto';
-    $('prompt').style.height = `${Math.min($('prompt').scrollHeight,180)}px`;
+export function createComposerView({state, session, showChat, toast, onChange}) {
+  function resize() {
+    const prompt = $('prompt');
+    prompt.style.height = prompt.value ? 'auto' : '';
+    if (prompt.value)
+      prompt.style.height = `${Math.min(prompt.scrollHeight,180)}px`;
+  }
+  $('prompt').addEventListener('input', () => { resize(); onChange(); });
+  function setDraft(text, attachments = state.attachments) {
+    $('prompt').value = text; resize();
     state.attachments = [...attachments]; renderAttachments();
   }
   function renderAttachments() {
     renderAttachmentList($('attachments'), state.attachments, index => {
       state.attachments.splice(index, 1); renderAttachments();
     });
+    onChange();
   }
-  function clearAttachments() { state.attachments = []; renderAttachments(); }
   async function addImages(files) {
     if (state.active && session().readOnly) return;
     const epoch = state.epoch;
@@ -29,6 +34,6 @@ export function createComposerView({state, session, showChat, toast}) {
 
 
   function readDraft() {return {text:$('prompt').value, attachments:[...state.attachments], model:$('model-select').value, effort:$('effort-select').value};}
-  function clearDraft() {$('prompt').value=''; $('prompt').style.height=''; clearAttachments();}
-  return {readDraft,clearDraft,setDraft,clearAttachments,addImages};
+  function clearDraft() { setDraft('', []); }
+  return {readDraft,clearDraft,setDraft,addImages};
 }

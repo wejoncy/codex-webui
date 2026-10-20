@@ -65,7 +65,7 @@ class ImageReferences:
         if method == "thread/turns/list":
             self._turns(result.get("data", []))
         elif method == "thread/items/list":
-            self._items(result.get("data", []))
+            self._items([entry["item"] for entry in result.get("data", [])])
         elif method in {"thread/read", "thread/start", "thread/resume", "thread/revert"}:
             self._turns(result.get("thread", {}).get("turns", []))
         elif method == "turn/start":

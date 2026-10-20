@@ -10,13 +10,16 @@ from tempfile import TemporaryDirectory
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from .api import create_router
 from .assets import StaticAssets
+from .browser_session import BrowserSessionMiddleware
 from .config import Settings
 from .errors import RpcError
 from .files import WorkspaceImages
 from .image_references import ImageReferences
+from .request_logging import RequestLoggingMiddleware
 from .rpc import CodexBridge
 from .security import AccessPolicy, install_security
 from .service import CodexService
@@ -51,8 +54,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await bridge.close()
 
     app = FastAPI(title="Codex Web UI", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
     app.state.settings = settings
     install_security(app, access)
+    app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(BrowserSessionMiddleware)
     app.include_router(create_router(access))
 
     @app.exception_handler(RpcError)
@@ -61,8 +67,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/")
     async def index():
-        return HTMLResponse(assets.html, headers={"Cache-Control": "no-store"})
+        return HTMLResponse(
+            assets.index_html, headers={"Cache-Control": "no-store"},
+        )
 
-    app.mount(assets.prefix, StaticFiles(directory=STATIC), name="assets")
+    app.mount(assets.prefix, assets, name="assets")
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

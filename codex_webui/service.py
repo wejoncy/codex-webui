@@ -14,7 +14,7 @@ from .thread_access import writer_is_locked
 ALLOWED_METHODS = frozenset({
     "thread/list", "thread/read", "thread/start", "thread/resume", "thread/archive", "thread/delete",
     "thread/name/set", "thread/turns/list", "thread/items/list", "thread/revert",
-    "turn/start", "turn/interrupt", "model/list", "account/read",
+    "turn/start", "turn/steer", "turn/interrupt", "model/list", "account/read",
 })
 
 
@@ -62,7 +62,8 @@ class CodexService:
             # Recheck unopened sessions too; never infer writer ownership from UI state.
             await self.refresh_access(thread_id)
         if thread_id in self._read_only and method in {
-            "turn/start", "turn/interrupt", "thread/revert", "thread/archive", "thread/delete", "thread/name/set",
+            "turn/start", "turn/steer", "turn/interrupt", "thread/revert",
+            "thread/archive", "thread/delete", "thread/name/set",
         }:
             raise RpcError("此对话为只读，请在其他 Codex 释放后刷新页面", data={"threadId": thread_id, "readOnly": True})
         if not self.bridge.ready:

@@ -7,6 +7,7 @@
   <meta name="description" content="连接 Codex app-server 的轻量 Python 工作台。流式对话、数学公式与图片预览。">
   <title>Codex · 工作台</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="modulepreload" href="/static/app.js">
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/style.css">
@@ -94,7 +95,12 @@
                 <span id="network-icon" data-icon="globe-off"></span>
               </label>
             </div>
-            <div class="composer-right"><button class="send-button" id="send-button" aria-label="发送消息" title="发送消息（Enter）"><span data-icon="arrow-up"></span></button><button class="stop-button" id="stop-button" aria-label="停止生成" hidden><span></span></button></div>
+            <div class="composer-right">
+              <button class="send-button" id="send-button"
+                aria-label="发送消息" title="发送消息（Enter）" disabled>
+                <span data-icon="arrow-up"></span>
+              </button>
+            </div>
           </div>
         </div>
       </footer>

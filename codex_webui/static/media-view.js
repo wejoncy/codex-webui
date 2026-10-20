@@ -4,7 +4,9 @@ export function createMediaView({toast}) {
     try { await navigator.clipboard.writeText(value); toast('已复制'); }
     catch { toast('浏览器未允许复制，请选中文本手动复制'); }
   }
-  let zoom = 1;
+  const image = $('viewer-image');
+  const canvas = $('image-canvas');
+  let zoom = 1, fitting = true;
   let diagramURL = null;
   function releaseDiagram() {
     if (diagramURL) URL.revokeObjectURL(diagramURL);
@@ -13,7 +15,9 @@ export function createMediaView({toast}) {
   function showImage(source, caption) {
     $('viewer-image').src = source; $('image-original').href = source;
     $('image-caption').textContent = caption || '图片预览';
-    setZoom(1); $('image-dialog').showModal();
+    image.hidden = true;
+    $('image-dialog').showModal();
+    if (image.complete) fit();
   }
   function showDiagram(output) {
     const svg = output.querySelector('svg');
@@ -22,14 +26,23 @@ export function createMediaView({toast}) {
     diagramURL = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], {type:'image/svg+xml'}));
     showImage(diagramURL, 'Mermaid 图表');
   }
-  function setZoom(value) {
-    zoom = Math.max(.2,Math.min(6,value));
-    const image = $('viewer-image');
-    image.style.maxWidth = zoom === 1 ? '95%' : 'none'; image.style.maxHeight = zoom === 1 ? '95%' : 'none';
-    image.style.width = zoom === 1 ? '' : `${image.naturalWidth * zoom}px`;
-    $('image-canvas').style.justifyContent = zoom > 1 ? 'safe center' : 'center';
-    $('image-canvas').style.alignItems = zoom > 1 ? 'safe center' : 'center';
-    $('zoom-reset').textContent = zoom === 1 ? '适合窗口' : `${Math.round(zoom*100)}%`;
+  function fitScale() {
+    return Math.min(1,
+      canvas.clientWidth * .95 / image.naturalWidth,
+      canvas.clientHeight * .95 / image.naturalHeight);
+  }
+  function fit() { setZoom(fitScale(), true); }
+  function setZoom(value, fit = false) {
+    if (!image.complete || !image.naturalWidth || !image.naturalHeight) return;
+    zoom = Math.max(Math.min(.1, fitScale()), Math.min(6, value));
+    fitting = fit;
+    image.hidden = false;
+    image.style.maxWidth = image.style.maxHeight = 'none';
+    image.style.width = `${image.naturalWidth * zoom}px`;
+    image.style.height = `${image.naturalHeight * zoom}px`;
+    canvas.style.justifyContent = canvas.style.alignItems = 'safe center';
+    $('zoom-reset').textContent = fitting
+      ? '适合窗口' : `${Math.round(zoom * 100)}%`;
   }
   document.addEventListener('click', event => {
     const copy = event.target.closest('.code-copy'); if (copy) copyText(copy.parentElement.querySelector('code')?.textContent || '');
@@ -42,14 +55,22 @@ export function createMediaView({toast}) {
     const diagram = event.target.closest('.mermaid-output');
     if (diagram && ['Enter', ' '].includes(event.key)) { event.preventDefault(); showDiagram(diagram); }
   });
-  $('zoom-in').onclick = () => setZoom(zoom + .25);
-  $('zoom-out').onclick = () => setZoom(zoom - .25);
-  $('zoom-reset').onclick = () => setZoom(1);
+  image.addEventListener('load', fit);
+  $('zoom-in').onclick = () => setZoom(zoom * 1.25);
+  $('zoom-out').onclick = () => setZoom(zoom / 1.25);
+  $('zoom-reset').onclick = fit;
   $('image-close').onclick = () => $('image-dialog').close();
-  $('image-canvas').addEventListener('wheel', e => { e.preventDefault(); setZoom(zoom + (e.deltaY < 0 ? .1 : -.1)); }, {passive:false});
-  $('image-dialog').addEventListener('close', () => { $('viewer-image').removeAttribute('src'); $('image-original').removeAttribute('href'); releaseDiagram(); });
-
-
-
+  canvas.addEventListener('wheel', event => {
+    event.preventDefault();
+    setZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
+  }, {passive:false});
+  window.addEventListener('resize', () => {
+    if ($('image-dialog').open && fitting) fit();
+  });
+  $('image-dialog').addEventListener('close', () => {
+    image.removeAttribute('src');
+    $('image-original').removeAttribute('href');
+    releaseDiagram();
+  });
   return {copyText};
 }
