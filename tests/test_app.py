@@ -195,6 +195,7 @@ def test_edit_truncates_original_thread_without_creating_sessions(client, edited
         return response.json()["result"]
 
     thread_id = rpc("thread/start")["thread"]["id"]
+    assert rpc("thread/read", threadId=thread_id, includeTurns=False)["thread"]["historyMode"] == "paginated"
     turns = [rpc("turn/start", threadId=thread_id, input=[{"type": "text", "text": text}])["turn"]["id"]
              for text in ["first", "middle", "last"]]
     with client.websocket_connect("/ws") as ws:

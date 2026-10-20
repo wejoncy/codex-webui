@@ -53,7 +53,7 @@ for raw in sys.stdin:
     elif method == "thread/list":
         result = {"data": list(threads.values()), "nextCursor": None}
     elif method == "thread/start":
-        thread = {"id": "fixture-thread", "name": None, "preview": "测试会话", "cwd": params.get("cwd"), "status": {"type": "idle"}, "turns": [], "historyMode": "paginated"}
+        thread = {"id": "fixture-thread", "name": None, "preview": "测试会话", "cwd": params.get("cwd"), "status": {"type": "idle"}, "turns": [], "historyMode": params.get("historyMode", "legacy")}
         threads[thread["id"]] = thread
         event("thread/started", {"thread": thread})
         result = {"thread": thread, "cwd": params.get("cwd")}
@@ -70,6 +70,9 @@ for raw in sys.stdin:
         result = {"data": list(reversed(turns)) if params.get("sortDirection") == "desc" else turns, "nextCursor": None}
     elif method == "thread/revert":
         thread = threads[params["threadId"]]
+        if thread["historyMode"] != "paginated":
+            send({"id": ident, "error": {"code": -32600, "message": "thread/revert only supports paginated threads"}})
+            continue
         index = next((i for i, turn in enumerate(thread["turns"]) if turn["id"] == params["beforeTurnId"]), None)
         if index is None:
             send({"id": ident, "error": {"code": -32602, "message": "Turn not found"}})

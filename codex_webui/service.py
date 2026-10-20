@@ -71,6 +71,8 @@ class CodexService:
             params["cwd"] = str(self.settings.workspace)
             params.setdefault("sandbox", "workspace-write")
             params.setdefault("approvalPolicy", "on-request")
+            if method == "thread/start":
+                params["historyMode"] = "paginated"
         elif "cwd" in params:
             params["cwd"] = str(self.settings.workspace)
         # Reads are forwarded directly and never acquire a writer via resume.
