@@ -11,6 +11,8 @@ const iconPaths = {
   sigma:'M18 4H6l7 8-7 8h12', image:'M4 3h16a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm-1 14 5-5 4 4 4-6 5 7M9 7h.01',
   'arrow-up-right':'M6 18 18 6M6 6h12v12', 'arrow-right':'M4 12h16m-6-6 6 6-6 6',
   'arrow-up':'M12 20V4m-6 6 6-6 6 6', 'arrow-down':'M12 4v16m-6-6 6 6 6-6',
+  'arrow-up-plus':'M9 20V4m-6 6 6-6 6 6m0 7h8m-4-4v8',
+  square:'M6 6h12v12H6z',
   sparkles:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z',
   shield:'M12 3 3 7v6c0 5 9 9 9 9s9-4 9-9V7l-9-4Zm-4 9 3 3 5-6',
   'shield-question':'M12 3 3 7v6c0 5 9 9 9 9s9-4 9-9V7l-9-4ZM9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4m0 3h.01',

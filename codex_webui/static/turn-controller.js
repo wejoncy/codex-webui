@@ -39,11 +39,13 @@ export function createTurnController({state, session, rpc, connect, history, com
     const {text:rawText,attachments} = edit || draft;
     const {model,effort} = draft;
     const text = rawText.trim();
-    if (submitting || (!text && !attachments.length && !edit?.extraInput.length) || (state.active && (session().running || session().readOnly))) return;
+    const hasInput = text || attachments.length || edit?.extraInput.length;
+    if (submitting || !hasInput) return;
+    if (state.active && session().readOnly) return;
     submitting = true; view.updateRunning();
     const executionSettings = {permissionMode: state.permissionMode, allowNetwork: state.allowNetwork};
     const epoch = state.epoch;
-    let started = false;
+    let started = false, cleared = false;
     let id = state.active, clientId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const isCurrent = () => epoch === state.epoch && id === state.active && state.view === 'chat';
     try {
@@ -61,7 +63,7 @@ export function createTurnController({state, session, rpc, connect, history, com
         await rpc('thread/resume', {threadId: id, excludeTurns: true}, executionSettings);
         s.resumed = true;
       }
-      if (s.running) throw new Error('请等当前回复结束后再发送');
+      if (edit && s.running) throw new Error('请等当前回复结束后再编辑');
       if (edit && !edit.reverted) {
         if (edit.threadId !== id || !s.items.has(edit.itemId)) throw new Error('对话历史已更新，请重新选择要编辑的消息');
         const operation = {edit, applied:false, notified:false, responded:false};
@@ -80,16 +82,31 @@ export function createTurnController({state, session, rpc, connect, history, com
         if (!await hydrateSession(id)) throw new Error('对话历史已更新，请重试');
         if (isCurrent()) view.renderSession();
       }
-      started = true;
-      s.running = true; s.turnId = null; s.turnRevision = ++state.revision; view.updateRunning();
+      const expectedTurnId = s.running ? s.turnId : null;
+      if (s.running && !expectedTurnId)
+        throw new Error('正在同步当前回复，请稍后发送');
+      started = !expectedTurnId;
+      if (started) {
+        s.running = true; s.turnId = null;
+        s.turnRevision = ++state.revision;
+        view.updateRunning();
+      }
       const input = [...(text ? [{type:'text',text}] : []), ...attachments.map(a => a.input || {type:'image',url:a.url}), ...(edit?.extraInput || [])];
-      upsert(id, {id:`local-${clientId}`,type:'userMessage',content:input}, null);
+      upsert(id, {
+        id:`local-${clientId}`, type:'userMessage', content:input,
+      }, expectedTurnId);
       if (isCurrent()) {
-        if (edit) editor.cancelEdit(); else composer.clearDraft();
+        if (edit) editor.cancelEdit();
+        else { composer.clearDraft(); cleared = true; }
         view.notice(); view.scrollBottom(true);
       }
-      const result = await rpc('turn/start', {threadId:id,clientUserMessageId:clientId,input,...(model ? {model} : {}),...(effort ? {effort} : {})}, executionSettings);
-      if (!s.deleted && !s.removedTurns.has(result.turn.id)) {
+      const params = {threadId:id, clientUserMessageId:clientId, input};
+      const result = expectedTurnId
+        ? await rpc('turn/steer', {...params, expectedTurnId})
+        : await rpc('turn/start', {
+          ...params, ...(model ? {model} : {}), ...(effort ? {effort} : {}),
+        }, executionSettings);
+      if (started && !s.deleted && !s.removedTurns.has(result.turn.id)) {
         s.turnId = result.turn.id; s.running = !s.finished.has(result.turn.id) && result.turn.status === 'inProgress';
       }
       if (id === state.active) view.updateRunning();
@@ -104,8 +121,12 @@ export function createTurnController({state, session, rpc, connect, history, com
       if (isCurrent()) {
         if (edit) {
           if (!state.edit) editor.restoreEdit(edit);
-        } else if (!composer.readDraft().text && !state.attachments.length) {
-          composer.setDraft(text, attachments);
+        } else if (cleared) {
+          const current = composer.readDraft();
+          composer.setDraft(
+            [rawText, current.text].filter(Boolean).join('\n\n'),
+            [...attachments, ...current.attachments],
+          );
         }
         view.notice(/already has an active writer/i.test(e.message || '')
           ? '该对话正由另一个 Codex 实例使用，已切换为只读。'

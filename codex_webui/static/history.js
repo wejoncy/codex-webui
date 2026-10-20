@@ -1,19 +1,11 @@
 import {mergeLatestItems} from './session-store.js';
 export function createHistory({state, session, api, view}) {
   const itemLoads = new WeakMap();
-  async function readPage(params) {
-    const result = await api('history', params);
-    const details = new Map(result.toolDetails.map(ref => [ref.itemId, ref]));
-    for (const turn of result.turns) for (const item of turn.items || []) {
-      if (details.has(item.id)) item._historyDetail = details.get(item.id);
-    }
-    return result;
-  }
   function loadItem(item) {
     if (itemLoads.has(item)) return itemLoads.get(item);
     const id = state.active, s = session(id), version = s.historyVersion;
     const loading = api('history/item', {
-      threadId:id, ...item._historyDetail,
+      threadId:id, turnId:item.turnId, itemId:item.id,
     }).then(result => {
       if (version !== s.historyVersion || s.items.get(item.id) !== item)
         return null;
@@ -27,7 +19,7 @@ export function createHistory({state, session, api, view}) {
   async function hydrateSession(id) {
     const s = session(id), historyVersion = s.historyVersion;
     const revision = state.revision;
-    const result = await readPage({threadId:id});
+    const result = await api('history', {threadId:id});
     if (historyVersion !== s.historyVersion) return false;
     s.cursor = result.nextCursor;
     const turns = [...result.turns].reverse();
@@ -47,14 +39,16 @@ export function createHistory({state, session, api, view}) {
     if (!s.cursor) return;
     state.historyBusy = true; view.setHistoryBusy(true);
     try {
-      const result = await readPage({threadId:id, cursor:s.cursor});
+      const result = await api('history', {threadId:id, cursor:s.cursor});
       if (historyVersion !== s.historyVersion) return;
       s.cursor = result.nextCursor;
       const older = new Map();
       for (const turn of [...result.turns].reverse()) {
         if (s.removedTurns.has(turn.id)) continue;
-        for (const item of turn.items || [])
-          older.set(item.id, {...item, turnId:turn.id});
+        for (const item of turn.items || []) {
+          if (!s.items.has(item.id))
+            older.set(item.id, {...item, turnId:turn.id});
+        }
       }
       s.items = new Map([...older, ...s.items]);
       if (epoch !== state.epoch) return;

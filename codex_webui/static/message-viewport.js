@@ -2,6 +2,7 @@
 // placeholders retain measured heights, so unloading never collapses history.
 export function createMessageViewport({root, render, release, onLayout}) {
   const records = new Map();
+  const estimatedHeight = 'var(--message-placeholder-height, 160px)';
   let anchor = null;
   let scrollTop = root?.scrollTop;
   function rememberPosition() {
@@ -14,7 +15,7 @@ export function createMessageViewport({root, render, release, onLayout}) {
       // An open modal may cover the reading area while media still loads.
       if (hit && !root.contains(hit)) return;
       const element = hit?.closest(
-        'p, li, pre, tr, blockquote, .math-display, .mermaid-block, '
+        'p, li, pre, tr, blockquote, summary, .math-display, .mermaid-block, '
         + '.message-header, .message-body, .tool-output');
       if (element && root.contains(element)) {
         anchor = {
@@ -58,7 +59,8 @@ export function createMessageViewport({root, render, release, onLayout}) {
       } else if (record.visible) {
         record.visible = false;
         sizes?.unobserve(entry.target);
-        entry.target.style.minHeight = `${Math.max(1, entry.boundingClientRect.height)}px`;
+        const height = entry.boundingClientRect.height;
+        entry.target.style.minHeight = height ? `${height}px` : estimatedHeight;
         release(entry.target);
         entry.target.replaceChildren();
         entry.target.dataset.placeholder = 'true';
@@ -78,7 +80,7 @@ export function createMessageViewport({root, render, release, onLayout}) {
     let record = records.get(element);
     if (!record) {
       record = {visible: !observer}; records.set(element, record);
-      element.style.minHeight = `${item.type === 'commandExecution' ? 48 : 160}px`;
+      element.style.minHeight = estimatedHeight;
       element.dataset.placeholder = 'true';
       observer?.observe(element);
       if (record.visible) sizes?.observe(element);

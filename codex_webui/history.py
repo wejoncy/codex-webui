@@ -19,13 +19,10 @@ class HistoryQuery(BaseModel):
     limit: int = Field(default=40, ge=1, le=100)
 
 
-class ToolDetail(BaseModel):
+class ToolDetailQuery(BaseModel):
+    threadId: StrictStr
     turnId: StrictStr
     itemId: StrictStr
-
-
-class ToolDetailQuery(ToolDetail):
-    threadId: StrictStr
 
 
 class HistoryTurn(BaseModel):
@@ -37,7 +34,6 @@ class HistoryTurn(BaseModel):
 class HistoryPage(BaseModel):
     turns: list[HistoryTurn]
     nextCursor: str | None
-    toolDetails: list[ToolDetail]
 
 
 class ToolDetailResponse(BaseModel):
@@ -58,7 +54,7 @@ async def read_history(service: CodexService, query: HistoryQuery) -> dict:
                 "itemsView": "notLoaded", "sortDirection": "desc",
             }))
         metadata = {turn["id"]: turn for turn in latest["data"]}
-    turns, details = {}, []
+    turns = {}
     for entry in result["data"]:
         ident, item = entry["turnId"], entry["item"]
         if ident not in turns:
@@ -69,12 +65,11 @@ async def read_history(service: CodexService, query: HistoryQuery) -> dict:
             }
         if (item["type"] in _DETAIL_TYPES
                 and item.get("status") != "inProgress"):
-            details.append({"turnId": ident, "itemId": item["id"]})
             item = {key: item[key] for key in _HEADER_FIELDS if key in item}
+            item["detailAvailable"] = True
         turns[ident]["items"].insert(0, item)
     return {
         "turns": list(turns.values()), "nextCursor": result.get("nextCursor"),
-        "toolDetails": details,
     }
 
 

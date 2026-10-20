@@ -1,6 +1,7 @@
 import {$} from './dom.js';
 import {renderAttachments as renderAttachmentList} from './attachment-view.js';
-export function createComposerView({state, session, showChat, toast}) {
+export function createComposerView({state, session, showChat, toast, onChange}) {
+  $('prompt').addEventListener('input', onChange);
   function setDraft(text, attachments) {
     $('prompt').value = text;
     $('prompt').style.height = 'auto';
@@ -11,6 +12,7 @@ export function createComposerView({state, session, showChat, toast}) {
     renderAttachmentList($('attachments'), state.attachments, index => {
       state.attachments.splice(index, 1); renderAttachments();
     });
+    onChange();
   }
   function clearAttachments() { state.attachments = []; renderAttachments(); }
   async function addImages(files) {

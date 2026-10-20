@@ -10,28 +10,65 @@ export function createMessageView({
 }) {
   const markdownTypes = new Set(['agentMessage','plan']);
   const toolUpdates = new Map();
-  function release(element) {
-    const body = element.querySelector('.markdown-body');
-    if (body) cancelMarkdown(body);
+  function cancelToolUpdate(element) {
     const pending = toolUpdates.get(element);
     if (pending) clearTimeout(pending.timer);
     toolUpdates.delete(element);
   }
+  function release(element) {
+    const body = element.querySelector('.markdown-body');
+    if (body) cancelMarkdown(body);
+    cancelToolUpdate(element);
+  }
   const viewport = createMessageViewport({
     root:$('scroll-area'), render:renderItem, release, onLayout,
   });
-  function mountItem(item, prepend = false) {
+  function commandGroup(prepend) {
+    const messages = $('messages');
+    const edge = prepend
+      ? messages.firstElementChild : messages.lastElementChild;
+    if (edge?.classList.contains('command-group')) return edge;
+    const group = document.createElement('details');
+    group.className = 'tool-message command-group';
+    const summary = document.createElement('summary');
+    summary.innerHTML = `${icon('terminal')}<span></span>`;
+    group.append(summary, document.createElement('div'));
+    if (prepend) messages.prepend(group);
+    else messages.append(group);
+    return group;
+  }
+  function updateCommandGroup(group) {
+    if (!group) return;
+    const count = group.lastElementChild.childElementCount;
+    if (!count) { group.remove(); return; }
+    const failed = !!group.querySelector('[data-status="failed"]');
+    const running = !!group.querySelector('[data-status="inProgress"]');
+    group.dataset.status = failed ? 'failed' : running ? 'inProgress' : '';
+    group.firstElementChild.lastElementChild.textContent =
+      `执行记录 · ${count} 项`
+      + (failed ? ' · 有失败' : running ? ' · 执行中' : '');
+  }
+  function mountItem(item, {prepend = false, streaming = false} = {}) {
     if (item.type === 'reasoning' && !hasReasoningText(item)) {
       removeMessage(item.id);
       return null;
     }
     let element = document.getElementById(itemDomId(item.id));
-    if (element) { updateItemElement(element, item); return element; }
-    element = document.createElement('article'); element.id = itemDomId(item.id); element.dataset.itemId = item.id;
-    element.className = `message viewport-message ${item.type === 'userMessage' ? 'user-message' : markdownTypes.has(item.type) ? 'agent-message' : 'tool-message'}`;
-    element.classList.toggle('image-message', item.type === 'imageView' || item.type === 'imageGeneration');
-    if (prepend) $('messages').prepend(element); else $('messages').append(element);
-    updateItemElement(element, item);
+    if (!element) {
+      element = document.createElement('article');
+      element.id = itemDomId(item.id);
+      element.dataset.itemId = item.id;
+      const role = item.type === 'userMessage' ? 'user-message'
+        : markdownTypes.has(item.type) ? 'agent-message' : 'tool-message';
+      element.className = `message viewport-message ${role}`;
+      element.classList.toggle('image-message',
+        item.type === 'imageView' || item.type === 'imageGeneration');
+      const parent = item.type === 'commandExecution'
+        ? commandGroup(prepend).lastElementChild : $('messages');
+      if (prepend) parent.prepend(element);
+      else parent.append(element);
+    }
+    updateItemElement(element, item, streaming);
     return element;
   }
   function ensureStructure(element, item) {
@@ -70,6 +107,11 @@ export function createMessageView({
       removeMessage(item.id);
       return;
     }
+    const status = item.status || '';
+    if (element.dataset.status !== status) {
+      element.dataset.status = status;
+      updateCommandGroup(element.closest('.command-group'));
+    }
     viewport.update(element, item, streaming);
   }
   function renderItem(element, item, streaming, ready) {
@@ -96,11 +138,14 @@ export function createMessageView({
       return;
     } else {
       const names = {commandExecution: '执行命令', fileChange:'修改文件', reasoning:'思考摘要', mcpToolCall:'调用工具', dynamicToolCall:'调用工具', webSearch:'搜索网页', imageView:'查看图片', imageGeneration:'生成图片', contextCompaction:'上下文已压缩', collabAgentToolCall:'协作任务'};
-      element.querySelector('summary>span:first-of-type').textContent = item.type === 'commandExecution' ? item.command : `${names[item.type] || item.type}${item.tool ? ` · ${item.tool}` : ''}${item.query ? ` · ${item.query}` : ''}`;
+      element.querySelector('summary>span:first-of-type').textContent =
+        `${names[item.type] || item.type}`
+        + `${item.tool ? ` · ${item.tool}` : ''}`
+        + `${item.query ? ` · ${item.query}` : ''}`;
       element.querySelector('.tool-status').textContent = ({inProgress:'进行中',completed:'已完成',failed:'失败',declined:'已拒绝'})[item.status] || '';
       const details = element.querySelector('details');
       if (!details.open) { ready(); return; }
-      if (item._historyDetail) {
+      if (item.detailAvailable) {
         const output = element.querySelector('.tool-output');
         output.textContent = '加载中…';
         loadItem(item).then(full => {
@@ -127,8 +172,7 @@ export function createMessageView({
         pending.item = item;
         return;
       }
-      const pending = toolUpdates.get(element);
-      if (pending) { clearTimeout(pending.timer); toolUpdates.delete(element); }
+      cancelToolUpdate(element);
       renderToolContent(element, item);
     }
     ready();
@@ -138,6 +182,9 @@ export function createMessageView({
     output.classList.toggle('image-output', item.type === 'imageView' || item.type === 'imageGeneration');
     if (item.type === 'imageView' || item.type === 'imageGeneration') {
       output.replaceChildren(createImage(item, 'Codex 图片'));
+    } else if (item.type === 'commandExecution') {
+      output.textContent = `$ ${item.command || ''}\n\n`
+        + (item.aggregatedOutput || '');
     } else if (item.type === 'fileChange') {
       output.textContent = (item.changes || []).map(c => `${c.kind?.type || 'update'} ${c.path}\n${c.diff || ''}`).join('\n\n');
     } else if (item.type === 'reasoning') output.textContent = [...(item.summary || []), ...(item.content || [])].filter(part => typeof part === 'string' && /\S/.test(part)).join('\n\n');
@@ -146,7 +193,12 @@ export function createMessageView({
   function clearMessages() { viewport.clear(); $('messages').replaceChildren(); }
   function removeMessage(id) {
     const element = document.getElementById(itemDomId(id));
-    if (element) { viewport.remove(element); element.remove(); }
+    if (element) {
+      const group = element.closest('.command-group');
+      viewport.remove(element);
+      element.remove();
+      updateCommandGroup(group);
+    }
   }
   return {mountItem, updateItemElement, clearMessages, removeMessage};
 }

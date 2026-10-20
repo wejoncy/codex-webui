@@ -51,6 +51,31 @@
   overscroll-behavior-inline: contain;
 }
 .tool-output { font-size: .8125rem; line-height: 1.65; }
+.message.tool-message:not(.image-message) {
+  --message-placeholder-height: 1.875rem;
+  margin: .25rem 0;
+}
+.command-group { margin: .25rem 0; }
+.command-group > div { padding-inline-start: .75rem; }
+.tool-message:not(.image-message) details:not([open]) {
+  border-color: transparent;
+  background: transparent;
+}
+.tool-message:not(.image-message) summary {
+  padding: .25rem .5rem;
+  min-height: 1.75rem;
+  border-radius: .375rem;
+}
+.tool-message:not(.image-message) summary:hover { background: var(--hover); }
+.tool-message:not(.image-message) summary::after { content: '›'; }
+.tool-message:not(.image-message) details[open] summary::after,
+.command-group[open] > summary::after {
+  transform: rotate(90deg);
+}
+.tool-message[data-status="failed"] > summary,
+.tool-message[data-status="failed"] > details > summary {
+  color: var(--danger);
+}
 .composer-area { width: min(52rem, calc(100% - 2 * var(--reading-gutter))); }
 .composer textarea {
   font-size: .8125rem;

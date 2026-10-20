@@ -92,7 +92,7 @@ def create_router(access: AccessPolicy) -> APIRouter:
 
     @router.post("/api/connect")
     async def connect(service: ServiceDependency):
-        return await service.connect()
+        return {**(await service.connect()), "authRequired": access.required}
 
     @router.post("/api/rpc")
     async def rpc(body: RpcBody, service: ServiceDependency):

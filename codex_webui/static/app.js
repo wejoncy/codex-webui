@@ -11,7 +11,7 @@ import {createTurnController} from './turn-controller.js';
 import {createEventHandler} from './events.js';
 import {createClient} from './client.js';
 import {createApprovalView} from './approval-view.js';
-import {createMessageView, itemDomId} from './message-view.js';
+import {createMessageView} from './message-view.js';
 import {createSessionStore} from './session-store.js';
 import {$, icon, icons} from './dom.js';
 import {refreshRenderTheme} from './renderer.js';
@@ -61,6 +61,7 @@ async function connect(eventStream) {
     const [status] = await Promise.all([api('connect', {}), eventStream]);
     state.connecting = false;
     updateStatus(status);
+    $('logout-button').hidden = !status.authRequired;
     notice();
     await Promise.allSettled([
       loadThreads(), loadModels(), loadAccount(),
@@ -126,17 +127,21 @@ async function openThread(id, refresh = false) {
   // completes, including cached history and navigation between sessions.
   s.readOnly = true;
   const historyVersion = s.historyVersion;
-  clearMessages();
-  for (const item of s.items.values()) mountItem(item);
-  updateRunning();
-  $('more-history').hidden = true;
+  const cached = s.hydrated && !refresh;
+  renderSession();
   try {
-    const access = await api('thread-access',{threadId:id,permissionMode:state.permissionMode,allowNetwork:state.allowNetwork});
+    const [access, hydrated] = await Promise.all([
+      api('thread-access', {
+        threadId:id, permissionMode:state.permissionMode,
+        allowNetwork:state.allowNetwork,
+      }),
+      cached ? true : hydrateSession(id),
+    ]);
     if (epoch !== state.epoch) return;
     setThreadAccess(id,access.readOnly);
-    if (s.hydrated && !refresh) { renderSession(); scrollBottom(true); return; }
-    if (!await hydrateSession(id) || epoch !== state.epoch) return;
-    renderSession(); scrollBottom(true);
+    if (!hydrated) return;
+    if (!cached) renderSession();
+    scrollBottom(true);
   } catch (e) { if (epoch === state.epoch && historyVersion === s.historyVersion) notice(`无法加载对话：${e.message}`, true); }
 }
 
@@ -149,16 +154,33 @@ function renderSession() {
   updateRunning();
 }
 
+function updateSendButton() {
+  const running = !!state.active && session().running;
+  const hasInput = !!$('prompt').value.trim() || !!state.attachments.length;
+  const action = running ? (hasInput ? 'steer' : 'stop') : 'send';
+  const button = $('send-button');
+  if (button.dataset.action !== action) {
+    const [symbol, label] = {
+      send:['arrow-up', '发送消息'],
+      steer:['arrow-up-plus', '追加到当前回复'],
+      stop:['square', '停止生成'],
+    }[action];
+    button.dataset.action = action;
+    button.innerHTML = icon(symbol);
+    button.title = label + (action === 'stop' ? '' : '（Enter）');
+    button.setAttribute('aria-label', label);
+  }
+  button.disabled = (!!state.active && session().readOnly)
+    || (action !== 'stop' && (turns.submitting || !!state.edit || !hasInput));
+}
+
 function updateRunning() {
   const readOnly = !!state.active && session().readOnly;
   $('composer').classList.toggle('read-only', readOnly);
   $('prompt').disabled = readOnly;
-  $('send-button').disabled = turns.submitting || readOnly || !!state.edit;
-  $('stop-button').disabled = readOnly;
   $('attach-button').disabled = readOnly;
   const running = state.active && session().running;
-  $('send-button').hidden = !!running;
-  $('stop-button').hidden = !running;
+  updateSendButton();
   $('thinking').hidden = !running;
   $('thinking-label').textContent = state.active && [...state.approvals.values()].some(r => r.params?.threadId === state.active) ? '等待你的回复' : 'Codex 正在处理';
   document.querySelectorAll('.message-edit').forEach(button => { button.disabled = turns.submitting || !!running || readOnly; });
@@ -207,16 +229,18 @@ const {setSidebar,loadThreads,renderThreads} = createSidebarView({state,rpc,onOp
 const {showExample} = createLabView({setView});
 const {copyText} = createMediaView({toast});
 
-const composer = createComposerView({state,session,showChat:() => setView('chat'),toast});
+const composer = createComposerView({
+  state, session, showChat:() => setView('chat'), toast,
+  onChange:updateSendButton,
+});
 const {clearAttachments,addImages} = composer;
 const editor = createMessageEditor({state,session,isSubmitting:() => turns.submitting,
   onSubmit:() => turns.sendEdit(),
   onChange:id => {
-    let element = document.getElementById(itemDomId(id));
-    const item = session().items.get(id) || (state.edit?.itemId === id ? state.edit.item : null);
-    if (item) {
-      if (element) updateItemElement(element,item); else element = mountItem(item);
-    } else removeMessage(id);
+    const item = session().items.get(id)
+      || (state.edit?.itemId === id ? state.edit.item : null);
+    const element = item ? mountItem(item) : null;
+    if (!item) removeMessage(id);
     updateRunning();
     return element;
   },
@@ -226,7 +250,7 @@ const historyController = createHistory({state,session,api,view:{
   report,setHistoryBusy:busy => {$('more-history').disabled=busy;},
   prependHistory:(items,cursor) => {
     const area=$('scroll-area'),anchor=$('messages').firstElementChild,top=anchor?.getBoundingClientRect().top;
-    for (const item of items.reverse()) if (!document.getElementById(itemDomId(item.id))) mountItem(item,true);
+    for (const item of items.reverse()) mountItem(item, {prepend:true});
     if (anchor) area.scrollTop += anchor.getBoundingClientRect().top-top;
     $('more-history').hidden = !cursor;
   },
@@ -246,8 +270,7 @@ const turns = createTurnController({state,session,rpc,connect,history:historyCon
   removeItem:id => removeMessage(id),
   upsertItem:(item,streaming) => {
     if (item.clientId) removeMessage(`local-${item.clientId}`);
-    const element=document.getElementById(itemDomId(item.id));
-    if (element) updateItemElement(element,item,streaming); else mountItem(item);
+    mountItem(item, {streaming});
   },
 }});
 const {send} = turns;
@@ -255,7 +278,7 @@ const onEvent = createEventHandler({state,session,turns,editor,setThreadAccess,v
   renderApprovals:() => renderApprovals(),updateRunning,updateStatus,notice,toast,renderThreads,openThread,loadThreads,removeThread,report,
 }});
 icons();
-const {mountItem, updateItemElement, clearMessages, removeMessage}
+const {mountItem, clearMessages, removeMessage}
   = createMessageView({
   session, isSubmitting: () => turns.submitting, editor, copyText,
   loadItem:historyController.loadItem,
@@ -285,8 +308,14 @@ $('toast-close').onclick = clearToast;
 $('connect-button').onclick = () => state.connected ? $('settings-dialog').showModal() : connect();
 $('reconnect').onclick = () => connect();
 $('settings-nav').onclick = () => { $('settings-dialog').showModal(); setSidebar(false); };
-$('send-button').onclick = send;
-$('stop-button').onclick = async () => { const s = session(); if (!s.turnId || s.readOnly) return; try { await rpc('turn/interrupt',{threadId:state.active,turnId:s.turnId}); } catch (e) { report(e); } };
+$('send-button').onclick = async () => {
+  if ($('send-button').dataset.action !== 'stop') { send(); return; }
+  const s = session();
+  if (!s.running || !s.turnId || s.readOnly) return;
+  try {
+    await rpc('turn/interrupt', {threadId:state.active, turnId:s.turnId});
+  } catch (e) { report(e); }
+};
 document.querySelectorAll('[data-prompt]').forEach(b => b.onclick = () => { if (state.active && session().readOnly) return; $('prompt').value = b.dataset.prompt; $('prompt').focus(); });
 $('prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
 $('prompt').addEventListener('input', () => { $('prompt').style.height = 'auto'; $('prompt').style.height = `${Math.min($('prompt').scrollHeight,180)}px`; });
@@ -323,7 +352,6 @@ async function bootstrap() {
   if (state.active) { session().readOnly = true; setView('chat'); updateRunning(); }
   if (new URLSearchParams(location.search).has('demo')) showExample('math');
   try {
-    const health = await api('health'); $('logout-button').hidden = !health.authRequired;
     client.openSocket(socketHandlers);
     const eventStream = new Promise(resolve => {
       if (client.socket.readyState === WebSocket.OPEN) resolve();
