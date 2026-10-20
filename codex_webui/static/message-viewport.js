@@ -1,14 +1,11 @@
 // Keep expensive message contents only near the scroll viewport. Empty article
 // placeholders retain measured heights, so unloading never collapses history.
-export function createMessageViewport({root, render, release}) {
+export function createMessageViewport({root, render, release, onLayout}) {
   const records = new Map();
-  let following = true;
   let anchor = null;
   let scrollTop = root?.scrollTop;
   function rememberPosition() {
     scrollTop = root.scrollTop;
-    following = root.scrollHeight - scrollTop - root.clientHeight < 110;
-    if (following) { anchor = null; return; }
     if (!document.elementFromPoint) return;
     const bounds = root.getBoundingClientRect();
     for (const inset of [8, 32, 64]) {
@@ -35,12 +32,10 @@ export function createMessageViewport({root, render, release}) {
       rememberPosition();
       return;
     }
-    if (following) root.scrollTop = root.scrollHeight;
-    else if (anchor?.element.isConnected) {
-      const top = anchor.element.getBoundingClientRect().top
-        - root.getBoundingClientRect().top;
-      root.scrollTop += top - anchor.top;
-    }
+    const offset = anchor?.element.isConnected
+      ? anchor.element.getBoundingClientRect().top
+        - root.getBoundingClientRect().top - anchor.top : 0;
+    onLayout(offset);
     rememberPosition();
   }
   root?.addEventListener('scroll', rememberPosition, {passive:true});
@@ -48,6 +43,7 @@ export function createMessageViewport({root, render, release}) {
   const sizes = typeof ResizeObserver === 'function'
     ? new ResizeObserver(stabilize) : null;
   if (root) sizes?.observe(root);
+  if (!sizes) root?.addEventListener('diagram-rendered', stabilize);
   const observer = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => {
     for (const entry of entries) {
       const record = records.get(entry.target);
@@ -100,7 +96,6 @@ export function createMessageViewport({root, render, release}) {
     if (root) sizes?.observe(root);
     for (const element of records.keys()) release(element);
     records.clear();
-    following = true;
     anchor = null;
     scrollTop = root?.scrollTop;
   }

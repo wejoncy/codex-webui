@@ -24,7 +24,10 @@ const editor=createMessageEditor({state,session:()=>s,isSubmitting:()=>submittin
   onChange:id=>{const element=document.getElementById(`item-${id}`); view.updateItemElement(element,s.items.get(id)); return element;},
   onSubmit:()=>saves++,
 });
-const view=createMessageView({session:()=>s,isSubmitting:()=>submitting,editor,copyText:()=>{},scrollBottom:()=>{}});
+const view=createMessageView({
+  session:()=>s,isSubmitting:()=>submitting,editor,
+  copyText:()=>{},onLayout:()=>{},
+});
 const element=view.mountItem(original);
 observer.emit(element,true);
 element.querySelector('.message-edit').onclick();

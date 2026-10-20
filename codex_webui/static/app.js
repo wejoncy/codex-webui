@@ -160,10 +160,13 @@ function updateRunning() {
   messageNavigation.refresh();
 }
 function scrollBottom(force = false) {
-  if (state.view !== 'chat' || (!state.autoScroll && !force)) return;
+  if (state.view !== 'chat') return;
+  if (force) state.autoScroll = true;
+  if (!state.autoScroll) return;
   const epoch = state.epoch;
   requestAnimationFrame(() => {
-    if (epoch === state.epoch && state.view === 'chat' && (state.autoScroll || force)) $('scroll-area').scrollTop = $('scroll-area').scrollHeight;
+    if (epoch === state.epoch && state.view === 'chat' && state.autoScroll)
+      $('scroll-area').scrollTop = $('scroll-area').scrollHeight;
   });
 }
 
@@ -213,7 +216,7 @@ const editor = createMessageEditor({state,session,isSubmitting:() => turns.submi
   },
 });
 const {cancelEdit} = editor;
-const historyController = createHistory({state,session,rpc,view:{
+const historyController = createHistory({state,session,api,view:{
   report,setHistoryBusy:busy => {$('more-history').disabled=busy;},
   prependHistory:(items,cursor) => {
     const area=$('scroll-area'),anchor=$('messages').firstElementChild,top=anchor?.getBoundingClientRect().top;
@@ -246,8 +249,15 @@ const onEvent = createEventHandler({state,session,turns,editor,setThreadAccess,v
   renderApprovals:() => renderApprovals(),updateRunning,updateStatus,notice,toast,renderThreads,openThread,loadThreads,removeThread,report,
 }});
 icons();
-const {mountItem, updateItemElement, clearMessages, removeMessage} = createMessageView({
-  session, isSubmitting: () => turns.submitting, editor, copyText, scrollBottom,
+const {mountItem, updateItemElement, clearMessages, removeMessage}
+  = createMessageView({
+  session, isSubmitting: () => turns.submitting, editor, copyText,
+  loadItem:historyController.loadItem,
+  onLayout:offset => {
+    if (state.view !== 'chat') return;
+    if (state.autoScroll) scrollBottom();
+    else if (offset) $('scroll-area').scrollTop += offset;
+  },
 });
 const {renderApprovals} = createApprovalView({
   requests:state.approvals, active:() => state.active, isReadOnly:() => !!state.active && session().readOnly,
@@ -287,8 +297,7 @@ $('scroll-area').addEventListener('scroll', () => {
   $('jump-bottom').hidden = state.view !== 'chat' || !state.active || state.autoScroll;
   messageNavigation.refresh();
 }, {passive:true});
-$('jump-bottom').onclick = () => { state.autoScroll = true; scrollBottom(true); };
-document.addEventListener('diagram-rendered', () => scrollBottom());
+$('jump-bottom').onclick = () => scrollBottom(true);
 document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); newChat(); } });
 $('login-dialog').addEventListener('cancel', e => e.preventDefault());
 $('login-form').onsubmit = async e => {

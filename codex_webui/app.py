@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from .api import create_router
 from .assets import StaticAssets
@@ -51,6 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await bridge.close()
 
     app = FastAPI(title="Codex Web UI", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
     app.state.settings = settings
     install_security(app, access)
     app.include_router(create_router(access))

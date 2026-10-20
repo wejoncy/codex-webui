@@ -5,7 +5,9 @@ import {createImage} from './image-view.js';
 export const itemDomId = id => `item-${id}`;
 const hasReasoningText = item => ['summary','content'].some(key =>
   (item[key] || []).some(part => typeof part === 'string' && /\S/.test(part)));
-export function createMessageView({session, isSubmitting, editor, copyText, scrollBottom}) {
+export function createMessageView({
+  session, isSubmitting, editor, copyText, onLayout, loadItem,
+}) {
   const markdownTypes = new Set(['agentMessage','plan']);
   const toolUpdates = new Map();
   function release(element) {
@@ -15,7 +17,9 @@ export function createMessageView({session, isSubmitting, editor, copyText, scro
     if (pending) clearTimeout(pending.timer);
     toolUpdates.delete(element);
   }
-  const viewport = createMessageViewport({root:$('scroll-area'), render:renderItem, release});
+  const viewport = createMessageViewport({
+    root:$('scroll-area'), render:renderItem, release, onLayout,
+  });
   function mountItem(item, prepend = false) {
     if (item.type === 'reasoning' && !hasReasoningText(item)) {
       removeMessage(item.id);
@@ -87,7 +91,8 @@ export function createMessageView({session, isSubmitting, editor, copyText, scro
     } else if (markdownTypes.has(item.type)) {
       element.querySelector('.message-phase').textContent = item.type === 'plan' ? '计划' : item.phase === 'commentary' ? '进展' : '';
       const target = element.querySelector('.message-body');
-      (streaming ? scheduleMarkdown : flushMarkdown)(target, item.text || '', () => {ready(); scrollBottom();});
+      (streaming ? scheduleMarkdown : flushMarkdown)(
+        target, item.text || '', ready);
       return;
     } else {
       const names = {commandExecution: '执行命令', fileChange:'修改文件', reasoning:'思考摘要', mcpToolCall:'调用工具', dynamicToolCall:'调用工具', webSearch:'搜索网页', imageView:'查看图片', imageGeneration:'生成图片', contextCompaction:'上下文已压缩', collabAgentToolCall:'协作任务'};
@@ -95,12 +100,27 @@ export function createMessageView({session, isSubmitting, editor, copyText, scro
       element.querySelector('.tool-status').textContent = ({inProgress:'进行中',completed:'已完成',failed:'失败',declined:'已拒绝'})[item.status] || '';
       const details = element.querySelector('details');
       if (!details.open) { ready(); return; }
+      if (item._historyDetail) {
+        const output = element.querySelector('.tool-output');
+        output.textContent = '加载中…';
+        loadItem(item).then(full => {
+          if (full && element.isConnected && details.open)
+            updateItemElement(element, full);
+        }).catch(error => {
+          if (output.isConnected) output.textContent = error.message;
+        });
+        ready();
+        return;
+      }
       if (streaming) {
         let pending = toolUpdates.get(element);
         if (!pending) {
           pending = {timer:setTimeout(() => {
             const latest = toolUpdates.get(element); toolUpdates.delete(element);
-            if (latest && element.isConnected && details.open) { renderToolContent(element, latest.item); ready(); scrollBottom(); }
+            if (latest && element.isConnected && details.open) {
+              renderToolContent(element, latest.item);
+              ready();
+            }
           }, 80)};
           toolUpdates.set(element, pending);
         }

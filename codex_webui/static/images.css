@@ -29,19 +29,3 @@
   padding: .5rem;
 }
 .image-output > .content-image, .attachment-chip > .content-image { margin: 0; }
-
-/* The same viewport handles raster images and rendered Mermaid SVGs. */
-.image-canvas {
-  padding: 16px;
-  align-items: safe center;
-  justify-content: safe center;
-  overscroll-behavior: contain;
-  touch-action: none;
-  cursor: grab;
-}
-.image-canvas.is-panning { cursor: grabbing; }
-.image-canvas > img {
-  max-width: none;
-  max-height: none;
-  user-select: none;
-}

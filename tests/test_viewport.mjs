@@ -25,6 +25,7 @@ const released=[];
 const viewport=createMessageViewport({root:document.getElementById('scroll'),
   render:(element,item,streaming,ready)=>{element.innerHTML='<p></p>';element.firstChild.textContent=item.text;ready();},
   release:element=>released.push(element),
+  onLayout:offset=>{scroll.scrollTop+=offset;},
 });
 const observer=observers[0];
 const nodes=Array.from({length:5000},(_,i)=>{
@@ -52,7 +53,7 @@ assert.equal(sizeObservers[0].nodes.size,1,
   'clearing a session releases all message size observations');
 console.log('Viewport tests passed: 5,000 placeholders, bounded live contents, retained heights, latest stream state, scroll-back and cleanup');
 
-// Late images/diagrams must keep bottom following or the visible paragraph.
+// The viewport reports anchor shifts; its caller owns following decisions.
 const scroll=document.getElementById('scroll');
 scroll.clientWidth=800;scroll.clientHeight=600;
 scroll.scrollHeight=2400;
@@ -70,7 +71,7 @@ document.elementFromPoint=()=>paragraph;
 scroll.dispatchEvent(new document.defaultView.Event('scroll'));
 scroll.scrollHeight=3000;
 sizeObservers[0].callback();
-assert.equal(position,2400,'late media keeps the reader at the bottom');
+assert.equal(position,1800,'layout reports do not enable bottom following');
 position=1000;
 scroll.dispatchEvent(new document.defaultView.Event('scroll'));
 scroll.scrollHeight=3300;contentY+=300;
@@ -100,8 +101,8 @@ cover.remove();document.elementFromPoint=()=>paragraph;
 viewport.clear();
 paragraph.remove();
 sizeObservers[0].callback();
-assert.equal(position,scroll.scrollHeight-scroll.clientHeight,
-  'a new session does not reuse the previous reading anchor');
+assert.equal(position,900,
+  'clearing history discards its anchor without changing scroll policy');
 console.log('Reading position tests passed: late media, visible anchors, '
   + 'navigation, native anchoring and session cleanup');
 

@@ -86,7 +86,7 @@ export function createTurnController({state, session, rpc, connect, history, com
       upsert(id, {id:`local-${clientId}`,type:'userMessage',content:input}, null);
       if (isCurrent()) {
         if (edit) editor.cancelEdit(); else composer.clearDraft();
-        view.notice(); state.autoScroll = true; view.scrollBottom(true);
+        view.notice(); view.scrollBottom(true);
       }
       const result = await rpc('turn/start', {threadId:id,clientUserMessageId:clientId,input,...(model ? {model} : {}),...(effort ? {effort} : {})}, executionSettings);
       if (!s.deleted && !s.removedTurns.has(result.turn.id)) {
