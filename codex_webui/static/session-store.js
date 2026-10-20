@@ -6,6 +6,7 @@ export function createSessionStore({cachedHistories = 3} = {}) {
     if (!sessions.has(id)) sessions.set(id, {
       items: new Map(), turnId: null, running: false, resumed: false, readOnly: false, cursor: null, hydrated: false,
       finished: new Set(), historyVersion: 0, removedTurns: new Set(), pendingReverts: [],
+      turnRevision: 0,
     });
     const value = sessions.get(id); used.set(value, ++clock);
     return value;
@@ -31,6 +32,22 @@ export function createSessionStore({cachedHistories = 3} = {}) {
     return true;
   }
   return {sessions, session, trimHistory, remove};
+}
+
+// Turn events, RPC replies and history snapshots share one mutation boundary.
+// A captured revision prevents a late reply from replacing newer live state.
+export function updateTurn(s, turn, revision) {
+  if (s.deleted || s.removedTurns.has(turn?.id)) return;
+  if (revision !== undefined && revision !== s.turnRevision) return;
+  const running = turn?.status === 'inProgress';
+  if (turn?.id && !running) {
+    s.finished.add(turn.id);
+    if (revision === undefined && s.running && s.turnId !== turn.id) return;
+  }
+  if (running && s.finished.has(turn.id)) return;
+  s.turnId = turn?.id || null;
+  s.running = running;
+  s.turnRevision++;
 }
 
 export function mergeLatestItems(s, turns, revision) {

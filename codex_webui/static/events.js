@@ -1,3 +1,5 @@
+import {updateTurn} from './session-store.js';
+
 export function createEventHandler({state, session, turns, editor, setThreadAccess, view}) {
   function onEvent(message) {
     const p = message.params || {}, method = message.method;
@@ -32,7 +34,8 @@ export function createEventHandler({state, session, turns, editor, setThreadAcce
         // Another tab/client changed this thread. Invalidate both cache and in-flight reads.
         s.historyVersion++;
         for (const item of s.items.values()) if (item.turnId) s.removedTurns.add(item.turnId);
-        s.items.clear(); s.hydrated = false; s.cursor = null; s.running = false; s.turnId = null;
+        s.items.clear(); s.hydrated = false; s.cursor = null;
+        updateTurn(s, null);
         if (state.edit?.threadId === p.threadId) editor.cancelEdit();
         if (p.threadId === state.active) view.openThread(p.threadId, true).catch(view.report);
       }
@@ -40,12 +43,10 @@ export function createEventHandler({state, session, turns, editor, setThreadAcce
     }
     if (s.removedTurns.has(p.turnId || p.turn?.id)) return;
     if (method === 'turn/started') {
-      s.turnRevision = ++state.revision;
-      s.turnId = p.turn.id; s.running = !s.finished.has(p.turn.id);
+      updateTurn(s, {...p.turn, status:'inProgress'});
       if (p.threadId === state.active) view.updateRunning(); view.renderThreads();
     } else if (method === 'turn/completed') {
-      s.turnRevision = ++state.revision;
-      s.finished.add(p.turn.id); s.running = false; s.turnId = p.turn.id;
+      updateTurn(s, p.turn);
       if (p.threadId === state.active) {
         view.updateRunning();
         if (p.turn.error) view.notice(p.turn.error.message || '本次回复出错', true);

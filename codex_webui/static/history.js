@@ -1,4 +1,4 @@
-import {mergeLatestItems} from './session-store.js';
+import {mergeLatestItems, updateTurn} from './session-store.js';
 export function createHistory({state, session, api, view}) {
   const itemLoads = new WeakMap();
   function loadItem(item) {
@@ -18,16 +18,16 @@ export function createHistory({state, session, api, view}) {
   }
   async function hydrateSession(id) {
     const s = session(id), historyVersion = s.historyVersion;
-    const revision = state.revision;
+    const revision = state.revision, turnRevision = s.turnRevision;
     const result = await api('history', {threadId:id});
     if (historyVersion !== s.historyVersion) return false;
     s.cursor = result.nextCursor;
     const turns = [...result.turns].reverse();
     for (const turn of turns) s.removedTurns.delete(turn.id);
-    if ((s.turnRevision || 0) <= revision) {
+    // A pending local start may not yet exist in the server snapshot.
+    if (!(s.running && !s.turnId)) {
       const activeTurn = turns.find(turn => turn.status === 'inProgress' && !s.finished.has(turn.id));
-      s.running = !!activeTurn;
-      s.turnId = activeTurn?.id || turns.at(-1)?.id || null;
+      updateTurn(s, activeTurn || turns.at(-1), turnRevision);
     }
     s.items = mergeLatestItems(s, turns, revision);
     s.hydrated = true;

@@ -12,7 +12,7 @@ import {createEventHandler} from './events.js';
 import {createClient} from './client.js';
 import {createApprovalView} from './approval-view.js';
 import {createMessageView} from './message-view.js';
-import {createSessionStore} from './session-store.js';
+import {createSessionStore, updateTurn} from './session-store.js';
 import {$, icon, icons} from './dom.js';
 import {refreshRenderTheme} from './renderer.js';
 import {sessionFromURL, setSessionURL} from './navigation.js';
@@ -47,7 +47,9 @@ function updateStatus(status) {
   $('transport-label').textContent = status.transport === 'websocket' ? '远程 WebSocket · JSON-RPC' : '本地 stdio · JSON-RPC';
   if (!status.connected) {
     state.approvals.clear();
-    for (const s of state.sessions.values()) { s.running = false; s.resumed = false; }
+    for (const s of state.sessions.values()) {
+      updateTurn(s, null); s.resumed = false;
+    }
     document.querySelectorAll('.approval-card').forEach(el => el.remove());
     updateRunning();
   }
@@ -104,9 +106,7 @@ function newChat() {
   clearMessages();
   $('thinking').hidden = true;
   $('more-history').hidden = true;
-  $('prompt').value = '';
-  $('prompt').style.height = '';
-  clearAttachments();
+  composer.clearDraft();
   setView('chat');
   updateRunning();
   renderThreads();
@@ -233,7 +233,7 @@ const composer = createComposerView({
   state, session, showChat:() => setView('chat'), toast,
   onChange:updateSendButton,
 });
-const {clearAttachments,addImages} = composer;
+const {addImages} = composer;
 const editor = createMessageEditor({state,session,isSubmitting:() => turns.submitting,
   onSubmit:() => turns.sendEdit(),
   onChange:id => {
@@ -308,17 +308,17 @@ $('toast-close').onclick = clearToast;
 $('connect-button').onclick = () => state.connected ? $('settings-dialog').showModal() : connect();
 $('reconnect').onclick = () => connect();
 $('settings-nav').onclick = () => { $('settings-dialog').showModal(); setSidebar(false); };
-$('send-button').onclick = async () => {
-  if ($('send-button').dataset.action !== 'stop') { send(); return; }
-  const s = session();
-  if (!s.running || !s.turnId || s.readOnly) return;
-  try {
-    await rpc('turn/interrupt', {threadId:state.active, turnId:s.turnId});
-  } catch (e) { report(e); }
+$('send-button').onclick = () => {
+  if ($('send-button').dataset.action === 'stop') turns.stop().catch(report);
+  else send();
 };
-document.querySelectorAll('[data-prompt]').forEach(b => b.onclick = () => { if (state.active && session().readOnly) return; $('prompt').value = b.dataset.prompt; $('prompt').focus(); });
+document.querySelectorAll('[data-prompt]').forEach(button => {
+  button.onclick = () => {
+    if (state.active && session().readOnly) return;
+    composer.setDraft(button.dataset.prompt); $('prompt').focus();
+  };
+});
 $('prompt').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
-$('prompt').addEventListener('input', () => { $('prompt').style.height = 'auto'; $('prompt').style.height = `${Math.min($('prompt').scrollHeight,180)}px`; });
 $('prompt').addEventListener('paste', e => { const files = [...(e.clipboardData?.files || [])]; if (files.length) { e.preventDefault(); addImages(files).catch(report); } });
 $('attach-button').onclick = () => $('image-input').click();
 $('image-suggestion').onclick = () => $('image-input').click();
