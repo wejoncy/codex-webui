@@ -1,5 +1,45 @@
 import {$,icon} from './dom.js';
 export function createSettingsView({state,rpc}) {
+  const defaultsKey = 'codex-webui-model-defaults';
+  const sessionKey = id => `codex-webui-model:${id}`;
+  const emptyChoice = () => ({model:'', effort:''});
+  function readChoice(key) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key));
+      return value && typeof value.model === 'string' && typeof value.effort === 'string'
+        ? {model:value.model, effort:value.effort} : null;
+    } catch { return null; }
+  }
+  let defaults = readChoice(defaultsKey) || emptyChoice(), currentChoice = {...defaults};
+  const effortNames = {none:'无',minimal:'最低',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最大',ultra:'Ultra'};
+  function renderModelChoice(modelId, effortId, choice) {
+    const models = $(modelId), efforts = $(effortId);
+    models.replaceChildren(new Option('Codex 默认模型', ''));
+    for (const model of state.models.filter(m => !m.hidden)) models.append(new Option(model.displayName || model.model || model.id, model.model || model.id));
+    if (choice.model && ![...models.options].some(option => option.value === choice.model)) models.append(new Option(choice.model, choice.model));
+    models.value = choice.model;
+    const model = state.models.find(m => (m.model || m.id) === choice.model) || (!choice.model && state.models.find(m => m.isDefault));
+    efforts.replaceChildren(new Option('默认强度', ''));
+    for (const effort of model?.supportedReasoningEfforts || []) efforts.append(new Option(effortNames[effort.reasoningEffort] || effort.reasoningEffort, effort.reasoningEffort));
+    if (choice.effort && !model) efforts.append(new Option(effortNames[choice.effort] || choice.effort, choice.effort));
+    if ([...efforts.options].some(option => option.value === choice.effort)) efforts.value = choice.effort;
+    return {model:models.value, effort:efforts.value};
+  }
+  function selectSession(id) {
+    currentChoice = id ? readChoice(sessionKey(id)) || emptyChoice() : {...defaults};
+    currentChoice = renderModelChoice('model-select','effort-select',currentChoice);
+  }
+  function rememberModel(id, choice) { localStorage.setItem(sessionKey(id), JSON.stringify({model:choice.model, effort:choice.effort})); }
+  function forgetSession(id) { localStorage.removeItem(sessionKey(id)); }
+  function changeCurrentModel() {
+    currentChoice = renderModelChoice('model-select','effort-select', {model:$('model-select').value, effort:$('effort-select').value});
+    if (state.active) rememberModel(state.active,currentChoice);
+  }
+  function changeDefaults() {
+    defaults = renderModelChoice('settings-model-select','settings-effort-select', {model:$('settings-model-select').value, effort:$('settings-effort-select').value});
+    localStorage.setItem(defaultsKey,JSON.stringify(defaults));
+    if (!state.active) selectSession(null);
+  }
   const permissionModes = {
     ask: {label: '默认询问', icon: 'shield-question', help: '工作区内写入，需要提升权限时询问。'},
     'workspace-auto': {label: '工作区自动', icon: 'shield', help: '工作区内自动执行，不弹执行审批；超出权限的操作会失败。'},
@@ -39,19 +79,8 @@ export function createSettingsView({state,rpc}) {
   async function loadModels() {
     const result = await rpc('model/list', {limit: 100});
     state.models = result.data || [];
-    const selected = $('model-select').value;
-    $('model-select').replaceChildren(new Option('Codex 默认模型', ''));
-    for (const model of state.models.filter(m => !m.hidden)) $('model-select').append(new Option(model.displayName || model.model || model.id, model.model || model.id));
-    if ([...$('model-select').options].some(o => o.value === selected)) $('model-select').value = selected;
-    updateEfforts();
-  }
-  function updateEfforts() {
-    const selected = $('effort-select').value;
-    const model = state.models.find(m => (m.model || m.id) === $('model-select').value) || state.models.find(m => m.isDefault);
-    $('effort-select').replaceChildren(new Option('默认强度', ''));
-    const names = {none:'无',minimal:'最低',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最大',ultra:'Ultra'};
-    for (const effort of model?.supportedReasoningEfforts || []) $('effort-select').append(new Option(names[effort.reasoningEffort] || effort.reasoningEffort, effort.reasoningEffort));
-    if ([...$('effort-select').options].some(o => o.value === selected)) $('effort-select').value = selected;
+    currentChoice = renderModelChoice('model-select','effort-select',currentChoice);
+    defaults = renderModelChoice('settings-model-select','settings-effort-select',defaults);
   }
   async function loadAccount() {
     try {
@@ -62,12 +91,17 @@ export function createSettingsView({state,rpc}) {
   }
 
 
-  $('model-select').onchange = updateEfforts;
+  $('model-select').onchange = changeCurrentModel;
+  $('effort-select').onchange = changeCurrentModel;
+  $('settings-model-select').onchange = changeDefaults;
+  $('settings-effort-select').onchange = changeDefaults;
   $('permission-select').onchange = () => setPermission($('permission-select').value);
   $('settings-permission-select').onchange = () => setPermission($('settings-permission-select').value);
   $('network-access').onchange = () => setNetworkAccess($('network-access').checked);
   $('settings-network-access').onchange = () => setNetworkAccess($('settings-network-access').checked);
   setPermission(localStorage.getItem('codex-webui-permission'));
   setNetworkAccess(localStorage.getItem('codex-webui-network') === 'true');
-  return {loadModels,loadAccount};
+  renderModelChoice('settings-model-select','settings-effort-select',defaults);
+  selectSession(state.active);
+  return {loadModels,loadAccount,selectSession,rememberModel,forgetSession};
 }

@@ -60,6 +60,21 @@
   max-height: min(11.25rem, 25dvh);
 }
 .composer textarea::placeholder { color: var(--muted); }
+.message-navigation {
+  position: absolute;
+  inset-inline-start: max(.25rem, calc((100% - 52rem) / 2 - 2.5rem));
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  z-index: 2;
+}
+.message-navigation .jump-bottom { position: static; }
+
+@container workspace (max-width: 57rem) {
+  .conversation { padding-inline-start: 2.75rem; }
+}
 .model-picker select, .effort-select { font-size: .75rem; }
 .lab { width: min(56rem, calc(100% - 2 * var(--reading-gutter))); }
 .lab-preview { padding: clamp(1rem, 3vw, 2rem); }
@@ -67,7 +82,7 @@
 @container workspace (max-width: 38rem) {
   .message-body { margin-inline-start: 0; }
   .message.tool-message, .approval-card { margin-inline-start: 0; }
-  .conversation { padding-inline: var(--reading-gutter); margin-top: 1rem; }
+  .conversation { padding-inline-end: var(--reading-gutter); margin-top: 1rem; }
   .topbar { padding-inline: 1rem; }
   .breadcrumb-detail { display: none; }
 }

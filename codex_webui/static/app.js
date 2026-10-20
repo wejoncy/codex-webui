@@ -5,6 +5,7 @@ import {createLabView} from './lab-view.js';
 import {createMediaView} from './media-view.js';
 import {createComposerView} from './composer-view.js';
 import {createMessageEditor} from './message-editor.js';
+import {createMessageNavigation} from './message-navigation.js';
 import {createHistory} from './history.js';
 import {createTurnController} from './turn-controller.js';
 import {createEventHandler} from './events.js';
@@ -79,6 +80,7 @@ function setView(view) {
   $('welcome').hidden = view === 'lab' || !!state.active;
   $('conversation').hidden = view === 'lab' || !state.active;
   $('composer-area').hidden = view === 'lab';
+  $('message-navigation').hidden = view !== 'chat' || !state.active;
   $('lab-nav').classList.toggle('active', view === 'lab');
   $('page-title').textContent = view === 'lab' ? '渲染实验室' : '工作台';
   $('page-detail').textContent = view === 'lab' ? '公式、图片与代码的试验场' : state.active ? threadTitle(state.threads.find(t => t.id === state.active) || {}) : '新的可能，从这里开始';
@@ -89,6 +91,7 @@ function newChat() {
   cancelEdit();
   state.epoch++;
   state.active = null;
+  settingsView.selectSession(null);
   if (!turns.submitting) store.trimHistory(null);
   setSessionURL(null);
   clearMessages();
@@ -103,9 +106,11 @@ function newChat() {
   $('prompt').focus();
 }
 async function openThread(id, refresh = false) {
+  if (state.sessions.get(id)?.deleted) { newChat(); return; }
   if (id !== state.active) cancelEdit();
   const epoch = ++state.epoch;
   state.active = id;
+  settingsView.selectSession(id);
   setSessionURL(id);
   setView('chat');
   renderThreads();
@@ -152,22 +157,44 @@ function updateRunning() {
   $('thinking-label').textContent = state.active && [...state.approvals.values()].some(r => r.params?.threadId === state.active) ? '等待你的回复' : 'Codex 正在处理';
   document.querySelectorAll('.message-edit').forEach(button => { button.disabled = turns.submitting || !!running || readOnly; });
   editor.sync();
+  messageNavigation.refresh();
 }
 function scrollBottom(force = false) {
-  if (state.view !== 'chat') return;
-  if (state.autoScroll || force) requestAnimationFrame(() => { $('scroll-area').scrollTop = $('scroll-area').scrollHeight; });
+  if (state.view !== 'chat' || (!state.autoScroll && !force)) return;
+  const epoch = state.epoch;
+  requestAnimationFrame(() => {
+    if (epoch === state.epoch && state.view === 'chat' && (state.autoScroll || force)) $('scroll-area').scrollTop = $('scroll-area').scrollHeight;
+  });
 }
 
 function setThreadAccess(id, readOnly) {
   const s = session(id);
+  if (s.deleted) return;
   s.readOnly = !!readOnly;
   if (readOnly) s.resumed = false;
   if (id === state.active) { renderApprovals(); updateRunning(); }
   renderThreads();
 }
 
-const {loadModels,loadAccount} = createSettingsView({state,rpc});
-const {setSidebar,loadThreads,renderThreads} = createSidebarView({state,rpc,onOpen:id => openThread(id),onNewChat:() => newChat(),report});
+function removeThread(id) {
+  if (!id || !store.remove(id)) return;
+  settingsView.forgetSession(id);
+  state.listing++;
+  state.threads = state.threads.filter(thread => thread.id !== id);
+  for (const [key, request] of state.approvals) if (request.params?.threadId === id) state.approvals.delete(key);
+  if (state.active === id) newChat();
+  else { renderThreads(); renderApprovals(); }
+}
+async function deleteThread(id) {
+  const s = session(id);
+  if (s.deleted || s.readOnly || s.running || turns.submitting) return;
+  await rpc('thread/delete', {threadId:id});
+  removeThread(id);
+}
+const settingsView = createSettingsView({state,rpc});
+const {loadModels,loadAccount} = settingsView;
+const {setSidebar,loadThreads,renderThreads} = createSidebarView({state,rpc,onOpen:id => openThread(id),onNewChat:() => newChat(),
+  onDelete:deleteThread,canDelete:() => !turns.submitting,report});
 const {showExample} = createLabView({setView});
 const {copyText} = createMediaView({toast});
 
@@ -196,9 +223,17 @@ const historyController = createHistory({state,session,rpc,view:{
   },
 }});
 const {hydrateSession,loadHistory} = historyController;
+const messageNavigation = createMessageNavigation({
+  root:$('scroll-area'), messages:$('messages'), button:$('previous-question'),
+  context:() => state.view === 'chat' && state.active ? {
+    key:`${state.epoch}:${session().historyVersion}`, cursor:session().cursor, loading:state.historyBusy,
+  } : null,
+  loadOlder:loadHistory, pauseFollowing:() => { state.autoScroll = false; }, report,
+});
 const turns = createTurnController({state,session,rpc,connect,history:historyController,composer,editor,setThreadAccess,view:{
   updateRunning,renderSession,renderThreads,scrollBottom,notice,
-  activateThread:id => {state.active=id;setSessionURL(id);setView('chat');renderThreads();},
+  rememberModel:settingsView.rememberModel,
+  activateThread:id => {state.active=id;settingsView.selectSession(id);setSessionURL(id);setView('chat');renderThreads();},
   removeItem:id => removeMessage(id),
   upsertItem:(item,streaming) => {
     if (item.clientId) removeMessage(`local-${item.clientId}`);
@@ -208,7 +243,7 @@ const turns = createTurnController({state,session,rpc,connect,history:historyCon
 }});
 const {send} = turns;
 const onEvent = createEventHandler({state,session,turns,editor,setThreadAccess,view:{
-  renderApprovals:() => renderApprovals(),updateRunning,updateStatus,notice,toast,renderThreads,openThread,loadThreads,report,
+  renderApprovals:() => renderApprovals(),updateRunning,updateStatus,notice,toast,renderThreads,openThread,loadThreads,removeThread,report,
 }});
 icons();
 const {mountItem, updateItemElement, clearMessages, removeMessage} = createMessageView({
@@ -250,6 +285,7 @@ $('more-history').onclick = loadHistory;
 $('scroll-area').addEventListener('scroll', () => {
   const area = $('scroll-area'); state.autoScroll = area.scrollHeight-area.scrollTop-area.clientHeight < 110;
   $('jump-bottom').hidden = state.view !== 'chat' || !state.active || state.autoScroll;
+  messageNavigation.refresh();
 }, {passive:true});
 $('jump-bottom').onclick = () => { state.autoScroll = true; scrollBottom(true); };
 document.addEventListener('diagram-rendered', () => scrollBottom());

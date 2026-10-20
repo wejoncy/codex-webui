@@ -18,7 +18,19 @@ export function createSessionStore({cachedHistories = 3} = {}) {
       value.items.clear(); value.hydrated = false; value.cursor = null; value.historyVersion++;
     }
   }
-  return {sessions, session, trimHistory};
+  function remove(id) {
+    const value = session(id);
+    if (value.deleted) return false;
+    // Retain only a tombstone so late events and old history reads cannot revive it.
+    value.deleted = true; value.historyVersion++;
+    value.items.clear(); value.finished.clear(); value.removedTurns.clear();
+    value.pendingReverts.length = 0;
+    value.turnId = value.cursor = null;
+    value.running = value.resumed = value.hydrated = false;
+    value.readOnly = true;
+    return true;
+  }
+  return {sessions, session, trimHistory, remove};
 }
 
 export function mergeLatestItems(s, turns, revision) {

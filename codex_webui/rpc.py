@@ -87,6 +87,8 @@ class CodexBridge:
         self.pending[ident] = future
         started = monotonic()
         try:
+            if method == "thread/name/set":
+                log.info("Thread rename requested: thread_id=%s request_id=%s", (params or {}).get("threadId"), ident)
             await self._write({"id": ident, "method": method, "params": params or {}})
             async with asyncio.timeout(self.settings.rpc_timeout):
                 return await future
@@ -148,6 +150,8 @@ class CodexBridge:
         if not isinstance(message, dict):
             return
         if "method" in message:
+            if message["method"] == "thread/name/updated":
+                log.info("Thread name update received: thread_id=%s", message.get("params", {}).get("threadId"))
             if "id" in message:
                 self.approvals[request_key(message["id"])] = message
             elif message["method"] == "serverRequest/resolved":

@@ -108,6 +108,12 @@ for raw in sys.stdin:
         threads[params["threadId"]]["name"] = params["name"]
     elif method == "thread/archive":
         threads.pop(params["threadId"], None)
+    elif method == "thread/delete":
+        if writer_lock and writer_lock.exists():
+            send({"id": ident, "error": {"code": -32000, "message": f"thread {params['threadId']} already has an active writer"}})
+            continue
+        threads.pop(params["threadId"], None)
+        event("thread/deleted", {"threadId": params["threadId"]})
     else:
         send({"id": ident, "error": {"code": -32601, "message": "Method not found"}})
         continue
