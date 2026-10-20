@@ -1,0 +1,93 @@
+/* Reading layout uses available workspace width, including sidebar changes. */
+.main {
+  container: workspace / inline-size;
+  --reading-gutter: clamp(.75rem, 3vw, 2rem);
+}
+
+@supports (width: 1cqi) {
+  .main { --reading-gutter: clamp(.75rem, 3cqi, 2rem); }
+}
+
+.conversation {
+  width: 100%;
+  max-width: 52rem;
+  margin: clamp(1rem, 3vh, 1.75rem) auto 0;
+  padding: 0 var(--reading-gutter) 1.5rem;
+}
+
+.message { margin-bottom: 1.5rem; }
+.message-body, .markdown-body, .user-message .message-body {
+  font-size: 1rem;
+  line-height: 1.75;
+  letter-spacing: normal;
+  text-align: start;
+}
+
+/* Keep prose readable on wide screens; code and tables can use the full column. */
+.markdown-body :is(p, ul, ol, blockquote, h1, h2, h3, h4) {
+  max-inline-size: 40em;
+  max-inline-size: 40ic;
+}
+.markdown-body p { margin-bottom: .8em; }
+.markdown-body :is(h1, h2, h3, h4) {
+  line-height: 1.45;
+  letter-spacing: normal;
+  margin: 1.4em 0 .6em;
+}
+.markdown-body h1 { font-size: 1.65rem; }
+.markdown-body h2 { font-size: 1.35rem; }
+.markdown-body h3 { font-size: 1.125rem; }
+.markdown-body h4 { font-size: 1rem; }
+.markdown-body :is(ul, ol) { margin-block: .7em .9em; }
+.markdown-body pre {
+  max-inline-size: 100%;
+  font-size: .875rem;
+  line-height: 1.65;
+  overscroll-behavior-inline: contain;
+}
+.markdown-body table { font-size: .875rem; }
+.markdown-body code { font-size: .9em; }
+.markdown-body pre > code { font: inherit; }
+.table-wrap, .math-display, .markdown-body .katex-display, .math-fallback {
+  max-inline-size: 100%;
+  overscroll-behavior-inline: contain;
+}
+.tool-output { font-size: .8125rem; line-height: 1.65; }
+.composer-area { width: min(52rem, calc(100% - 2 * var(--reading-gutter))); }
+.composer textarea {
+  font-size: 1rem;
+  line-height: 1.6;
+  max-height: min(11.25rem, 25dvh);
+}
+.composer textarea::placeholder { color: var(--muted); }
+.model-picker select, .effort-select { font-size: .75rem; }
+.lab { width: min(56rem, calc(100% - 2 * var(--reading-gutter))); }
+.lab-preview { padding: clamp(1rem, 3vw, 2rem); }
+
+@container workspace (max-width: 38rem) {
+  .message-body { margin-inline-start: 0; }
+  .message.tool-message, .approval-card { margin-inline-start: 0; }
+  .conversation { padding-inline: var(--reading-gutter); margin-top: 1rem; }
+  .topbar { padding-inline: 1rem; }
+  .breadcrumb-detail { display: none; }
+}
+
+@container workspace (max-width: 26rem) {
+  .composer { padding-inline: .75rem; }
+  .composer-left { gap: 3px; }
+  .composer-left > .tool-divider { display: none; }
+  .model-picker { flex: 1 1 0; max-width: none; }
+  .model-picker select { max-width: 100%; font-size: .6875rem; }
+  .effort-select { max-width: 3.5rem; font-size: .6875rem; }
+  .execution-control { flex-basis: 26px; width: 26px; }
+  .topbar { padding-inline: .75rem; }
+  .top-actions { gap: 6px; }
+  .breadcrumb-icon, .breadcrumb-slash { display: none; }
+}
+
+@media (max-height: 32rem) {
+  .conversation { margin-top: .75rem; }
+  .composer-area { padding-block: .375rem; }
+  .composer { padding-block: .625rem; }
+  .composer textarea { min-height: 2.5rem; }
+}

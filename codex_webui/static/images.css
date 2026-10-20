@@ -1,0 +1,31 @@
+/* Shared conversation image presentation; source type never changes sizing. */
+:root {
+  --image-preview-width: 40rem;
+  --image-preview-height: min(32rem, 65dvh);
+}
+.content-image {
+  display: block;
+  max-width: min(100%, var(--image-preview-width));
+  max-height: var(--image-preview-height);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  margin: .875rem auto;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  cursor: zoom-in;
+}
+.markdown-body p:has(.content-image) { max-inline-size: none; }
+.message.image-message {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+.tool-output.image-output {
+  max-width: calc(var(--image-preview-width) + 1rem);
+  max-height: none;
+  overflow: visible;
+  white-space: normal;
+  padding: .5rem;
+}
+.image-output > .content-image, .attachment-chip > .content-image { margin: 0; }

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-webui-python"
+version = "0.1.1"
+description = "A Python web workspace for Codex app-server, with fast math and image rendering."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
+dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1", "websockets>=14,<17"]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+codex-webui = "codex_webui.__main__:main"
+
+[tool.setuptools.package-data]
+codex_webui = ["static/**/*", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+tmp_path_retention_count = 0
+tmp_path_retention_policy = "none"
