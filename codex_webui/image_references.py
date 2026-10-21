@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
+import re
 from threading import Lock
+from urllib.parse import unquote
 
 
 class ImageReferences:
@@ -52,6 +54,11 @@ class ImageReferences:
             kind = item.get("type")
             if kind in {"imageView", "imageGeneration"}:
                 self._add(item.get("savedPath") or item.get("path"))
+            elif kind == "agentMessage":
+                for path in re.findall(
+                    r"\]\(<?(/[^)\n>]+)>?\)", item.get("text", ""),
+                ):
+                    self._add(unquote(path.split("?")[0].split("#")[0]))
             elif kind == "userMessage":
                 for part in item.get("content", []):
                     if part.get("type") == "localImage":

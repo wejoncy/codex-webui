@@ -34,6 +34,16 @@ export function createImage(item, alt = '图片') {
 }
 
 export function prepareImages(fragment) {
+  for (const link of fragment.querySelectorAll('a[href]')) {
+    const path = link.getAttribute('href');
+    if (/^(?:[a-z][a-z\d+.-]*:|\/\/|[?#])/i.test(path)) continue;
+    if (!/\.(png|jpe?g|webp|gif|svg|avif|bmp|ico)(?:[?#].*)?$/i.test(path)
+        || link.querySelector('img')) continue;
+    const image = document.createElement('img');
+    image.alt = link.textContent;
+    image.dataset.imageSource = path;
+    link.replaceWith(image);
+  }
   for (const image of fragment.querySelectorAll('img')) {
     const source = image.getAttribute('data-image-source') ?? image.getAttribute('src') ?? '';
     configureImage(image, imageURL(source, {encodedPath:true}));
