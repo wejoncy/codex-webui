@@ -1,4 +1,4 @@
-"""Bounded references to local images reported by the app-server."""
+"""Bounded references to local files reported by the app-server."""
 from __future__ import annotations
 
 from collections import OrderedDict
@@ -55,14 +55,23 @@ class ImageReferences:
             if kind in {"imageView", "imageGeneration"}:
                 self._add(item.get("savedPath") or item.get("path"))
             elif kind == "agentMessage":
-                for path in re.findall(
-                    r"\]\(<?(/[^)\n>]+)>?\)", item.get("text", ""),
-                ):
-                    self._add(unquote(path.split("?")[0].split("#")[0]))
+                self.observe_text(item.get("text", ""))
             elif kind == "userMessage":
                 for part in item.get("content", []):
                     if part.get("type") == "localImage":
                         self._add(part.get("path"))
+
+    def observe_text(self, text: str, *, parent: Path | None = None) -> None:
+        for source in re.findall(r"\]\(<?([^\n>]+?)>?\)", text):
+            source = source.split("?")[0].split("#")[0]
+            if not source or source.startswith("//"):
+                continue
+            path = Path(unquote(source))
+            if not path.is_absolute():
+                if parent is None or re.match(r"[a-z][\w+.-]*:", source, re.I):
+                    continue
+                path = parent / path
+            self._add(str(path))
 
     def _turns(self, turns: list) -> None:
         for turn in turns:

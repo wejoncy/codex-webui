@@ -1,12 +1,16 @@
 // All content images share source resolution and DOM attributes. Parsing and
 // protocol adapters supply data; this module owns the browser image element.
-export function imageURL(source, {encodedPath = false} = {}) {
+export function imageURL(source, {encodedPath = false, basePath = ''} = {}) {
   if (typeof source !== 'string' || !source) return '';
   if (/^(https?:|data:image\/|blob:)/i.test(source) || source.startsWith('/static/') || source.startsWith('/api/files?')) return source;
   let path = source.replace(/^(file:\/\/|sandbox:)/i, '');
   if (encodedPath) {
     path = path.split(/[?#]/)[0];
     try { path = decodeURIComponent(path); } catch { /* Preserve literal percent signs. */ }
+  }
+  if (basePath && !/^(?:[\\/]|[a-z]:)/i.test(path)) {
+    const end = Math.max(basePath.lastIndexOf('/'), basePath.lastIndexOf('\\'));
+    path = basePath.slice(0, end + 1) + path;
   }
   return `/api/files?path=${encodeURIComponent(path)}`;
 }
@@ -33,7 +37,7 @@ export function createImage(item, alt = '图片') {
   return configureImage(image, imageSource(item));
 }
 
-export function prepareImages(fragment) {
+export function prepareImages(fragment, basePath = '') {
   for (const link of fragment.querySelectorAll('a[href]')) {
     const path = link.getAttribute('href');
     if (/^(?:[a-z][a-z\d+.-]*:|\/\/|[?#])/i.test(path)) continue;
@@ -46,7 +50,7 @@ export function prepareImages(fragment) {
   }
   for (const image of fragment.querySelectorAll('img')) {
     const source = image.getAttribute('data-image-source') ?? image.getAttribute('src') ?? '';
-    configureImage(image, imageURL(source, {encodedPath:true}));
+    configureImage(image, imageURL(source, {encodedPath:true, basePath}));
     image.removeAttribute('data-image-source');
   }
 }

@@ -122,8 +122,10 @@ def create_router(access: AccessPolicy) -> APIRouter:
         return {"ok": True}
 
     @router.get("/api/files")
-    def image(path: str, request: Request):
+    def image(path: str, request: Request, preview: bool = False):
         try:
+            if preview:
+                return request.app.state.images.read_text(path)
             image = request.app.state.images.resolve(path)
         except ImageNotFound as exc:
             raise HTTPException(404, str(exc)) from exc
