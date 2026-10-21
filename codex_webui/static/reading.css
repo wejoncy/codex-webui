@@ -36,6 +36,15 @@
 }
 
 .markdown-body p { margin-bottom: .8em; }
+.file-preview {
+  margin-block: .4em;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  padding: .4rem .65rem;
+  overflow-wrap: anywhere;
+}
+.file-preview > summary { cursor: pointer; color: var(--muted); }
+.file-content { max-height: 60dvh; overflow: auto; margin-block: .5rem; }
 .markdown-body :is(h1, h2, h3, h4) {
   line-height: 1.45;
   letter-spacing: normal;

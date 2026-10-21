@@ -1,5 +1,6 @@
 import {renderDiagrams, releaseDiagrams} from './diagrams.js';
 import {prepareImages} from './image-view.js';
+import {prepareLinks, releaseLinks} from './link-view.js';
 export {renderDiagrams as refreshRenderTheme} from './diagrams.js';
 
 const worker = new Worker(new URL('./render-worker.js', import.meta.url));
@@ -72,6 +73,8 @@ function patchChildren(parent, incoming) {
     if (!before) { parent.append(after); continue; }
     if (before.isEqualNode(after)) continue;
     if (before.nodeType === 1 && after.nodeType === 1) {
+      if (before.dataset.renderKey
+          && before.dataset.renderKey === after.dataset.renderKey) continue;
       if (before.classList.contains('mermaid-block') && after.classList.contains('mermaid-block')) {
         if (before.querySelector('.mermaid-source code')?.textContent === after.querySelector('.mermaid-source code')?.textContent && before.dataset.mermaidReady === after.dataset.mermaidReady) continue;
       } else if (before.localName === after.localName && before.attributes.length === after.attributes.length && [...before.attributes].every(attr => after.getAttribute(attr.name) === attr.value)) {
@@ -89,7 +92,7 @@ worker.onmessage = ({data}) => {
   // Yield between completed messages so input/scroll events can run.
   setTimeout(pump, 0);
   if (!job) return;
-  const {element, resolve} = job;
+  const {element, resolve, basePath} = job;
   if (targets.get(element) !== data.id || !element.isConnected) { resolve(null); return; }
   const clean = DOMPurify.sanitize(data.html, {
     USE_PROFILES: {html: true, mathMl: true, svg: true},
@@ -101,7 +104,10 @@ worker.onmessage = ({data}) => {
   // and decoded pixels when a later paragraph receives another delta.
   const template = document.createElement('template');
   template.innerHTML = clean;
-  prepareImages(template.content);
+  prepareImages(template.content, basePath);
+  prepareLinks(template.content, {
+    basePath, render:renderMarkdown, cancel:cancelMarkdown,
+  });
   patchChildren(element, [...template.content.childNodes]);
   fallbackMath(element);
   renderDiagrams(element);
@@ -116,13 +122,13 @@ worker.onerror = error => {
   inFlight = null;
 };
 
-export function renderMarkdown(element, text, final = true) {
+export function renderMarkdown(element, text, final = true, basePath = '') {
   const previous = targets.get(element);
   if (jobs.has(previous)) { jobs.get(previous).resolve(null); jobs.delete(previous); }
   const id = ++nextId;
   targets.set(element, id);
   return new Promise(resolve => {
-    jobs.set(id, {element, resolve, text, final});
+    jobs.set(id, {element, resolve, text, final, basePath});
     pump();
   });
 }
@@ -151,6 +157,7 @@ export function flushMarkdown(element, text, callback = () => {}) {
 }
 
 export function cancelMarkdown(element) {
+  releaseLinks(element);
   dirty.delete(element);
   const id = targets.get(element);
   targets.delete(element);
