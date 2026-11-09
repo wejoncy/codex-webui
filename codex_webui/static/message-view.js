@@ -2,6 +2,7 @@ import {$, icon} from './dom.js';
 import {scheduleMarkdown, flushMarkdown, cancelMarkdown} from './renderer.js';
 import {createMessageViewport} from './message-viewport.js';
 import {createImage} from './image-view.js';
+import {renderMessageTime} from './message-time.js';
 export const itemDomId = id => `item-${id}`;
 const hasReasoningText = item => ['summary','content'].some(key =>
   (item[key] || []).some(part => typeof part === 'string' && /\S/.test(part)));
@@ -76,7 +77,7 @@ export function createMessageView({
     const user = item.type === 'userMessage';
     if (user || markdownTypes.has(item.type)) {
       const header = document.createElement('div'); header.className = 'message-header';
-      header.innerHTML = `<span class="message-avatar">${user ? '你' : '✳'}</span><span class="message-role">${user ? '你' : 'Codex'}</span><span class="message-phase"></span>`;
+      header.innerHTML = `<span class="message-avatar">${user ? '你' : '✳'}</span><span class="message-role">${user ? '你' : 'Codex'}</span><span class="message-phase"></span><time class="message-time"></time>`;
       const copy = document.createElement('button'); copy.className = 'icon-button message-copy'; copy.innerHTML = icon('copy'); copy.title = '复制消息'; copy.setAttribute('aria-label', '复制消息');
       copy.onclick = () => { const latest = session().items.get(item.id) || item; copyText(latest.text || (latest.content || []).filter(p => p.type === 'text').map(p => p.text).join('\n')); };
       header.append(copy);
@@ -89,7 +90,7 @@ export function createMessageView({
       element.append(header, body);
     } else {
       const details = document.createElement('details');
-      const summary = document.createElement('summary'); summary.innerHTML = `${icon(item.type === 'commandExecution' ? 'terminal' : item.type === 'fileChange' ? 'file' : 'sparkles')}<span></span><span class="tool-status"></span>`;
+      const summary = document.createElement('summary'); summary.innerHTML = `${icon(item.type === 'commandExecution' ? 'terminal' : item.type === 'fileChange' ? 'file' : 'sparkles')}<span></span><time class="message-time"></time><span class="tool-status"></span>`;
       const output = document.createElement('div'); output.className = 'tool-output'; details.append(summary, output); element.append(details);
       details.open = element.dataset.toolOpen === undefined
         ? item.type === 'imageView' || item.type === 'imageGeneration'
@@ -116,6 +117,7 @@ export function createMessageView({
   }
   function renderItem(element, item, streaming, ready) {
     ensureStructure(element, item);
+    renderMessageTime(element.querySelector('.message-time'), item);
     const user = item.type === 'userMessage';
     if (user) {
       const edit = element.querySelector('.message-edit');

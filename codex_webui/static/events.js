@@ -54,7 +54,11 @@ export function createEventHandler({state, session, turns, editor, setThreadAcce
       }
       if (state.connected) view.loadThreads().catch(console.error);
     } else if (method === 'item/started' || method === 'item/completed') {
-      turns.upsert(p.threadId, p.item, p.turnId);
+      turns.upsert(p.threadId, {
+        ...p.item,
+        startedAtMs:p.item.startedAtMs ?? p.startedAtMs,
+        completedAtMs:p.item.completedAtMs ?? p.completedAtMs,
+      }, p.turnId);
     } else if (method === 'item/agentMessage/delta' || method === 'item/plan/delta') {
       const item = s.items.get(p.itemId) || {id:p.itemId, type:method.includes('/plan/') ? 'plan' : 'agentMessage', text:''};
       turns.upsert(p.threadId, {...item, text:(item.text || '') + p.delta}, p.turnId, true);
