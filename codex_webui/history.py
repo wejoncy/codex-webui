@@ -10,7 +10,15 @@ from .service import CodexService
 _DETAIL_TYPES = {
     "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall",
 }
-_HEADER_FIELDS = ("id", "type", "command", "status", "tool")
+_HEADER_FIELDS = ("id", "type", "command", "status", "tool", "startedAtMs", "completedAtMs")
+
+
+def _item_with_times(entry: dict) -> dict:
+    item = dict(entry["item"])
+    for key in ("startedAtMs", "completedAtMs"):
+        if item.get(key) is None and entry.get(key) is not None:
+            item[key] = entry[key]
+    return item
 
 
 class HistoryQuery(BaseModel):
@@ -56,7 +64,7 @@ async def read_history(service: CodexService, query: HistoryQuery) -> dict:
         metadata = {turn["id"]: turn for turn in latest["data"]}
     turns = {}
     for entry in result["data"]:
-        ident, item = entry["turnId"], entry["item"]
+        ident, item = entry["turnId"], _item_with_times(entry)
         if ident not in turns:
             turns[ident] = {
                 "id": ident,
@@ -93,5 +101,5 @@ async def read_tool(service: CodexService, query: ToolDetailQuery) -> dict:
     })
     for entry in result["data"]:
         if entry["item"]["id"] == query.itemId:
-            return {"item": entry["item"]}
+            return {"item": _item_with_times(entry)}
     raise RpcError("未找到这条工具记录，请刷新后重试", -32602)

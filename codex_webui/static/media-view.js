@@ -60,6 +60,11 @@ export function createMediaView({toast}) {
   $('zoom-out').onclick = () => setZoom(zoom / 1.25);
   $('zoom-reset').onclick = fit;
   $('image-close').onclick = () => $('image-dialog').close();
+  $('image-dialog').addEventListener('click', event => {
+    if (event.target === canvas || event.target === $('image-dialog')) {
+      $('image-dialog').close();
+    }
+  });
   canvas.addEventListener('wheel', event => {
     event.preventDefault();
     setZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));

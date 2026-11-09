@@ -155,23 +155,40 @@ function renderSession() {
 }
 
 function updateSendButton() {
+  const readOnly = !!state.active && session().readOnly;
   const running = !!state.active && session().running;
   const hasInput = !!$('prompt').value.trim() || !!state.attachments.length;
-  const action = running ? (hasInput ? 'steer' : 'stop') : 'send';
+  const action = readOnly ? 'refresh' : running ? (hasInput ? 'steer' : 'stop') : 'send';
   const button = $('send-button');
   if (button.dataset.action !== action) {
     const [symbol, label] = {
       send:['arrow-up', '发送消息'],
       steer:['arrow-up-plus', '追加到当前回复'],
       stop:['square', '停止生成'],
+      refresh:['refresh', '刷新最新消息'],
     }[action];
     button.dataset.action = action;
     button.innerHTML = icon(symbol);
-    button.title = label + (action === 'stop' ? '' : '（Enter）');
+    button.title = label + (action === 'send' || action === 'steer' ? '（Enter）' : '');
     button.setAttribute('aria-label', label);
   }
-  button.disabled = (!!state.active && session().readOnly)
-    || (action !== 'stop' && (turns.submitting || !!state.edit || !hasInput));
+  button.disabled = action === 'refresh' ? session().refreshing
+    : action !== 'stop' && (turns.submitting || !!state.edit || !hasInput);
+  button.setAttribute('aria-busy', String(action === 'refresh' && session().refreshing));
+}
+
+async function refreshThread() {
+  const id = state.active;
+  if (!id) return;
+  const s = session(id), epoch = state.epoch;
+  if (!s.readOnly || s.refreshing) return;
+  s.refreshing = true; updateSendButton();
+  try {
+    if (await hydrateSession(id) && epoch === state.epoch) {
+      renderSession(); scrollBottom(true);
+    }
+  } catch (error) { if (epoch === state.epoch) report(error); }
+  finally { s.refreshing = false; if (id === state.active) updateSendButton(); }
 }
 
 function updateRunning() {
@@ -309,6 +326,7 @@ $('connect-button').onclick = () => state.connected ? $('settings-dialog').showM
 $('reconnect').onclick = () => connect();
 $('settings-nav').onclick = () => { $('settings-dialog').showModal(); setSidebar(false); };
 $('send-button').onclick = () => {
+  if ($('send-button').dataset.action === 'refresh') return refreshThread();
   if ($('send-button').dataset.action === 'stop') turns.stop().catch(report);
   else send();
 };

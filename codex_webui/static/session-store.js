@@ -6,7 +6,7 @@ export function createSessionStore({cachedHistories = 3} = {}) {
     if (!sessions.has(id)) sessions.set(id, {
       items: new Map(), turnId: null, running: false, resumed: false, readOnly: false, cursor: null, hydrated: false,
       finished: new Set(), historyVersion: 0, removedTurns: new Set(), pendingReverts: [],
-      turnRevision: 0,
+      turnRevision: 0, refreshing: false,
     });
     const value = sessions.get(id); used.set(value, ++clock);
     return value;

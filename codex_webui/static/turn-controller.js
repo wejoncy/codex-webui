@@ -5,7 +5,15 @@ export function createTurnController({state, session, rpc, connect, history, com
   function upsert(threadId, item, turnId, streaming = false) {
     const s = session(threadId);
     if (s.deleted || s.removedTurns.has(turnId)) return;
-    const record = {...s.items.get(item.id), ...item, turnId, _revision:++state.revision};
+    const previous = s.items.get(item.id)
+      || (item.clientId ? s.items.get(`local-${item.clientId}`) : null);
+    const record = {
+      ...previous, ...item, turnId, _revision:++state.revision,
+      startedAtMs:item.startedAtMs ?? previous?.startedAtMs,
+      completedAtMs:item.completedAtMs ?? previous?.completedAtMs,
+    };
+    if (record.startedAtMs == null && record.completedAtMs == null)
+      record._timestampMs ??= Date.now();
     if (item.clientId) s.items.delete(`local-${item.clientId}`);
     s.items.set(item.id, record);
     if (threadId === state.active) {
@@ -45,6 +53,7 @@ export function createTurnController({state, session, rpc, connect, history, com
     const hasInput = text || attachments.length || edit?.extraInput.length;
     if (submitting || !hasInput) return;
     if (state.active && session().readOnly) return;
+    const submittedAtMs = Date.now();
     submitting = true; view.updateRunning();
     const executionSettings = {permissionMode: state.permissionMode, allowNetwork: state.allowNetwork};
     const epoch = state.epoch;
@@ -106,6 +115,7 @@ export function createTurnController({state, session, rpc, connect, history, com
       const input = [...(text ? [{type:'text',text}] : []), ...attachments.map(a => a.input || {type:'image',url:a.url}), ...(edit?.extraInput || [])];
       upsert(id, {
         id:`local-${clientId}`, type:'userMessage', content:input,
+        _timestampMs:submittedAtMs,
       }, expectedTurnId);
       if (isCurrent()) {
         if (edit) editor.cancelEdit();
